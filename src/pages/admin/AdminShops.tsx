@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { shopStore } from '../../services/shopStore';
 import type { Shop } from '../../services/shopStore';
@@ -17,8 +18,19 @@ import {
   Mail,
   PlusCircle,
   X,
-  AlertTriangle
+  AlertTriangle,
+  AlertCircle
 } from 'lucide-react';
+
+interface AddShopFormData {
+  shopName: string;
+  ownerName: string;
+  mobile: string;
+  password: string;
+  email?: string;
+  aadhaar?: string;
+  address: string;
+}
 
 const formatDateTime = (dateStr?: string) => {
   if (!dateStr || dateStr === 'N/A') return 'N/A';
@@ -58,14 +70,22 @@ export default function AdminShops() {
   // Add Shop Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [formError, setFormError] = useState('');
-  const [addForm, setAddForm] = useState({
-    shopName: '',
-    ownerName: '',
-    mobile: '',
-    email: '',
-    aadhaar: '',
-    address: '',
-    password: ''
+
+  const {
+    register: registerAddShop,
+    handleSubmit: handleAddShopSubmitForm,
+    reset: resetAddShop,
+    formState: { errors: addShopErrors }
+  } = useForm<AddShopFormData>({
+    defaultValues: {
+      shopName: '',
+      ownerName: '',
+      mobile: '',
+      password: '',
+      email: '',
+      aadhaar: '',
+      address: ''
+    }
   });
 
   // Page open hote hi fresh shop list
@@ -112,7 +132,7 @@ export default function AdminShops() {
 
   // Ek row par koi action chal raha ho to us row ke baaki buttons disable
   const isRowBusy = (id: string) =>
-    ['approve', 'reject', 'delete', 'deactivate', 'activate'].some(k => rowAction.stateOf(`${k}-${id}`) === 'loading');
+    ['approve', 'reject', 'delete', 'deactivate', 'activate', 'perm-delete'].some(k => rowAction.stateOf(`${k}-${id}`) === 'loading');
 
   // Handlers
   const handleApprovePending = (shop: Shop, key = `approve-${shop.id}`) =>
@@ -126,50 +146,41 @@ export default function AdminShops() {
       'Failed to approve deletion.'
     );
 
+  const handleDeleteShopPermanently = (shop: Shop) => {
+    if (!window.confirm(`Kya aap sure hain ki "${shop.shopName}" ko permanently delete karna chahte hain? Iska poora data aur user account delete ho jayega.`)) return;
+    runShopAction(
+      `perm-delete-${shop.id}`,
+      () => shopStore.deleteShopPermanently(shop.id),
+      `Shop "${shop.shopName}" permanently deleted from system!`,
+      'Failed to delete shop permanently.'
+    );
+  };
+
   const handleRejectPending = (shop: Shop, key = `reject-${shop.id}`) =>
     runShopAction(key, () => shopStore.rejectShop(shop.id), `Registration request for "${shop.shopName}" rejected.`, 'Failed to reject shop.');
 
-  const handleAddShopSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onAddShopSubmit = async (data: AddShopFormData) => {
     setFormError('');
-
-    if (!addForm.shopName.trim() || !addForm.ownerName.trim() || !addForm.mobile.trim() || !addForm.address.trim() || !addForm.password.trim()) {
-      setFormError('Please fill in all mandatory fields (Shop Name, Owner Name, Mobile, Address, Password).');
-      return;
-    }
-
-    if (addForm.mobile.length < 10) {
-      setFormError('Please enter a valid 10-digit mobile number.');
-      return;
-    }
 
     addAction.run(async () => {
       try {
         await shopStore.addActiveShopByDistributor({
-        shopName: addForm.shopName,
-        ownerName: addForm.ownerName,
-        mobile: addForm.mobile,
-        email: addForm.email,
-        aadhaar: addForm.aadhaar,
-        address: addForm.address,
-        password: addForm.password
+          shopName: data.shopName.trim(),
+          ownerName: data.ownerName.trim(),
+          mobile: data.mobile.trim(),
+          email: data.email?.trim() || '',
+          aadhaar: data.aadhaar?.trim() || '',
+          address: data.address.trim(),
+          password: data.password
         });
       } catch (err) {
         setFormError(err instanceof Error && err.message ? err.message : 'Failed to add shop. Please try again.');
         throw err;
       }
 
-      setSuccessMsg(`New Shop "${addForm.shopName}" added and activated successfully!`);
+      setSuccessMsg(`New Shop "${data.shopName}" added and activated successfully!`);
       setIsAddModalOpen(false);
-      setAddForm({
-        shopName: '',
-        ownerName: '',
-        mobile: '',
-        email: '',
-        aadhaar: '',
-        address: '',
-        password: ''
-      });
+      resetAddShop();
       setTimeout(() => setSuccessMsg(''), 4000);
     });
   };
@@ -400,18 +411,32 @@ export default function AdminShops() {
 
                         {/* Actions for DELETE_REQUESTED Tab */}
                         {shop.status === 'DELETE_REQUESTED' && (
-                          <ActionButton
-                            state={rowAction.stateOf(`delete-${shop.id}`)}
-                            onClick={() => handleApproveDeletion(shop)}
-                            disabled={isRowBusy(shop.id)}
-                            loadingText="Deactivating..."
-                            successText="Deactivated"
-                            errorText="Failed"
-                            className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 justify-end ml-auto"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            <span>Approve Deletion (Deactivate Shop)</span>
-                          </ActionButton>
+                          <div className="flex items-center justify-end gap-2">
+                            <ActionButton
+                              state={rowAction.stateOf(`delete-${shop.id}`)}
+                              onClick={() => handleApproveDeletion(shop)}
+                              disabled={isRowBusy(shop.id)}
+                              loadingText="Deactivating..."
+                              successText="Deactivated"
+                              errorText="Failed"
+                              className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5"
+                            >
+                              <span>Approve Deletion (Deactivate Shop)</span>
+                            </ActionButton>
+                            <ActionButton
+                              state={rowAction.stateOf(`perm-delete-${shop.id}`)}
+                              onClick={() => handleDeleteShopPermanently(shop)}
+                              disabled={isRowBusy(shop.id)}
+                              loadingText="Deleting..."
+                              successText="Deleted"
+                              errorText="Failed"
+                              className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold shadow-xs flex items-center gap-1"
+                              title="Delete Permanently"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span>Delete Permanently</span>
+                            </ActionButton>
+                          </div>
                         )}
 
                         {/* Status label & actions for ACTIVE */}
@@ -428,6 +453,18 @@ export default function AdminShops() {
                               className="bg-red-50 hover:bg-red-100 text-red-700 px-2.5 py-1 rounded-lg text-xs font-bold border border-red-200 transition-colors"
                             >
                               Deactivate
+                            </ActionButton>
+                            <ActionButton
+                              state={rowAction.stateOf(`perm-delete-${shop.id}`)}
+                              onClick={() => handleDeleteShopPermanently(shop)}
+                              disabled={isRowBusy(shop.id)}
+                              loadingText="Deleting..."
+                              successText="Deleted"
+                              errorText="Failed"
+                              className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 border border-red-200 transition-colors"
+                              title="Delete Shop Permanently"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
                             </ActionButton>
                           </div>
                         )}
@@ -446,6 +483,18 @@ export default function AdminShops() {
                               className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs font-bold shadow-xs transition-colors"
                             >
                               Activate Shop
+                            </ActionButton>
+                            <ActionButton
+                              state={rowAction.stateOf(`perm-delete-${shop.id}`)}
+                              onClick={() => handleDeleteShopPermanently(shop)}
+                              disabled={isRowBusy(shop.id)}
+                              loadingText="Deleting..."
+                              successText="Deleted"
+                              errorText="Failed"
+                              className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 border border-red-200 transition-colors"
+                              title="Delete Shop Permanently"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
                             </ActionButton>
                           </div>
                         )}
@@ -476,7 +525,7 @@ export default function AdminShops() {
                 </button>
               </div>
 
-              <form onSubmit={handleAddShopSubmit} className="space-y-3.5">
+              <form onSubmit={handleAddShopSubmitForm(onAddShopSubmit)} className="space-y-3.5" noValidate>
                 
                 {formError && (
                   <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
@@ -492,11 +541,20 @@ export default function AdminShops() {
                   <input
                     type="text"
                     placeholder="Enter Shop / Outlet Name"
-                    value={addForm.shopName}
-                    onChange={(e) => setAddForm({ ...addForm, shopName: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                    required
+                    {...registerAddShop('shopName', {
+                      required: 'Shop Name enter karein.',
+                      minLength: { value: 3, message: 'Shop name at least 3 characters ka hona chahiye.' }
+                    })}
+                    className={`w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                      addShopErrors.shopName ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-blue-600'
+                    }`}
                   />
+                  {addShopErrors.shopName && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{addShopErrors.shopName.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -506,11 +564,20 @@ export default function AdminShops() {
                   <input
                     type="text"
                     placeholder="Full Name of Owner"
-                    value={addForm.ownerName}
-                    onChange={(e) => setAddForm({ ...addForm, ownerName: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                    required
+                    {...registerAddShop('ownerName', {
+                      required: 'Owner Name enter karein.',
+                      minLength: { value: 3, message: 'Owner name at least 3 characters ka hona chahiye.' }
+                    })}
+                    className={`w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                      addShopErrors.ownerName ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-blue-600'
+                    }`}
                   />
+                  {addShopErrors.ownerName && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{addShopErrors.ownerName.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -522,11 +589,23 @@ export default function AdminShops() {
                       type="tel"
                       maxLength={10}
                       placeholder="10-digit Mobile"
-                      value={addForm.mobile}
-                      onChange={(e) => setAddForm({ ...addForm, mobile: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      required
+                      {...registerAddShop('mobile', {
+                        required: '10-digit mobile number enter karein.',
+                        pattern: {
+                          value: /^[6-9]\d{9}$/,
+                          message: 'Valid 10-digit mobile number (6-9 se shuru) enter karein.'
+                        }
+                      })}
+                      className={`w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                        addShopErrors.mobile ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-blue-600'
+                      }`}
                     />
+                    {addShopErrors.mobile && (
+                      <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                        <AlertCircle className="h-3 w-3 shrink-0" />
+                        <span>{addShopErrors.mobile.message}</span>
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
@@ -535,11 +614,20 @@ export default function AdminShops() {
                     <input
                       type="password"
                       placeholder="Set Password"
-                      value={addForm.password}
-                      onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      required
+                      {...registerAddShop('password', {
+                        required: 'Password enter karein.',
+                        minLength: { value: 6, message: 'Password at least 6 characters ka hona chahiye.' }
+                      })}
+                      className={`w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                        addShopErrors.password ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-blue-600'
+                      }`}
                     />
+                    {addShopErrors.password && (
+                      <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                        <AlertCircle className="h-3 w-3 shrink-0" />
+                        <span>{addShopErrors.password.message}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -551,10 +639,22 @@ export default function AdminShops() {
                     <input
                       type="email"
                       placeholder="Email Address"
-                      value={addForm.email}
-                      onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      {...registerAddShop('email', {
+                        pattern: {
+                          value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                          message: 'Valid email address enter karein.'
+                        }
+                      })}
+                      className={`w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                        addShopErrors.email ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-blue-600'
+                      }`}
                     />
+                    {addShopErrors.email && (
+                      <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                        <AlertCircle className="h-3 w-3 shrink-0" />
+                        <span>{addShopErrors.email.message}</span>
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
@@ -564,30 +664,55 @@ export default function AdminShops() {
                       type="text"
                       maxLength={12}
                       placeholder="12-digit Aadhaar"
-                      value={addForm.aadhaar}
-                      onChange={(e) => setAddForm({ ...addForm, aadhaar: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      {...registerAddShop('aadhaar', {
+                        pattern: {
+                          value: /^\d{12}$/,
+                          message: 'Aadhaar exactly 12 digits ka hona chahiye.'
+                        }
+                      })}
+                      className={`w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                        addShopErrors.aadhaar ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-blue-600'
+                      }`}
                     />
+                    {addShopErrors.aadhaar && (
+                      <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                        <AlertCircle className="h-3 w-3 shrink-0" />
+                        <span>{addShopErrors.aadhaar.message}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Shop Address
+                    Shop Address *
                   </label>
                   <input
                     type="text"
                     placeholder="Full Address / City / District"
-                    value={addForm.address}
-                    onChange={(e) => setAddForm({ ...addForm, address: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    {...registerAddShop('address', {
+                      required: 'Shop Address enter karein.',
+                      minLength: { value: 5, message: 'Address at least 5 characters ka hona chahiye.' }
+                    })}
+                    className={`w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                      addShopErrors.address ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-blue-600'
+                    }`}
                   />
+                  {addShopErrors.address && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{addShopErrors.address.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-2 flex justify-end gap-3">
                   <button
                     type="button"
-                    onClick={() => setIsAddModalOpen(false)}
+                    onClick={() => {
+                      resetAddShop();
+                      setIsAddModalOpen(false);
+                    }}
                     className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel

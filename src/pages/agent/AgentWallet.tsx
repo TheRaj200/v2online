@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { useAppDispatch, useAppSelector, selectWalletBalance, selectWalletTransactions, selectWalletStatus, isInitialLoading } from '../../store/hooks';
 import { fetchWallet, rechargeWallet } from '../../store/slices/walletSlice';
@@ -18,6 +19,10 @@ import {
   QrCode
 } from 'lucide-react';
 
+interface RechargeFormData {
+  amount: number;
+}
+
 export default function AgentWallet() {
   // Redux se real balance / transactions (koi fake ₹500 default nahi)
   const dispatch = useAppDispatch();
@@ -31,37 +36,36 @@ export default function AgentWallet() {
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [rechargeAmount, setRechargeAmount] = useState<string>('500');
-  const [customAmount, setCustomAmount] = useState<string>('');
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors }
+  } = useForm<RechargeFormData>({
+    defaultValues: { amount: 500 }
+  });
+
+  const selectedAmount = watch('amount');
 
   useEffect(() => {
     dispatch(fetchWallet());
   }, [dispatch]);
 
-  const handleRechargeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onRechargeSubmit = (data: RechargeFormData) => {
     setErrorMsg('');
-
-    const amt = parseFloat(customAmount || rechargeAmount);
-    if (isNaN(amt) || amt <= 0) {
-      setErrorMsg('Kripya valid recharge amount enter/select karein (Minimum ₹100).');
-      return;
-    }
-
-    if (amt < 50) {
-      setErrorMsg('Minimum recharge amount ₹50 hona chahiye.');
-      return;
-    }
+    const amt = Number(data.amount);
 
     recharge.run(async () => {
       const result = await dispatch(rechargeWallet({ amount: amt, remarks: 'Wallet Auto UPI Topup' }));
       if (rechargeWallet.fulfilled.match(result)) {
-        // Close dialog immediately without delay
         setIsModalOpen(false);
         setSuccessMsg(result.payload);
-        setCustomAmount('');
+        reset({ amount: 500 });
         setTimeout(() => setSuccessMsg(''), 5000);
         return true;
       }
@@ -278,30 +282,33 @@ export default function AgentWallet() {
                 </div>
               )}
 
-              <form onSubmit={handleRechargeSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit(onRechargeSubmit)} className="space-y-4" noValidate>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
                     Select Quick Amount (₹)
                   </label>
                   <div className="grid grid-cols-3 gap-2">
-                    {['100', '200', '500', '1000', '2000', '5000'].map((amt) => (
-                      <button
-                        type="button"
-                        key={amt}
-                        onClick={() => {
-                          setRechargeAmount(amt);
-                          setCustomAmount('');
-                        }}
-                        className={`py-2 px-3 rounded-xl border font-bold text-xs transition-all ${
-                          rechargeAmount === amt && !customAmount
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        + ₹{amt}
-                      </button>
-                    ))}
+                    {['100', '200', '500', '1000', '2000', '5000'].map((amt) => {
+                      const numAmt = Number(amt);
+                      const isSelected = Number(selectedAmount) === numAmt;
+                      return (
+                        <button
+                          type="button"
+                          key={amt}
+                          onClick={() => {
+                            setValue('amount', numAmt, { shouldValidate: true });
+                          }}
+                          className={`py-2 px-3 rounded-xl border font-bold text-xs transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          + ₹{amt}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -312,10 +319,22 @@ export default function AgentWallet() {
                   <input
                     type="number"
                     placeholder="e.g. 750"
-                    value={customAmount}
-                    onChange={(e) => setCustomAmount(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    {...register('amount', {
+                      required: 'Recharge amount enter karein.',
+                      min: { value: 50, message: 'Minimum recharge amount ₹50 hona chahiye.' },
+                      max: { value: 100000, message: 'Maximum recharge limit ₹1,00,000 hai.' },
+                      valueAsNumber: true
+                    })}
+                    className={`w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                      errors.amount ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-blue-600'
+                    }`}
                   />
+                  {errors.amount && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{errors.amount.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-center gap-3">
@@ -328,8 +347,11 @@ export default function AgentWallet() {
                 <div className="pt-2 flex justify-end gap-3">
                   <button
                     type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
+                    onClick={() => {
+                      reset();
+                      setIsModalOpen(false);
+                    }}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -341,7 +363,7 @@ export default function AgentWallet() {
                     errorText="Recharge Failed"
                     className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer min-w-[150px]"
                   >
-                    <span>Proceed to Add ₹{customAmount || rechargeAmount}</span>
+                    <span>Proceed to Add ₹{selectedAmount || 0}</span>
                   </ActionButton>
                 </div>
 

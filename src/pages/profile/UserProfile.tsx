@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { useAuth } from '../../context/AuthContext';
 import apiClient from '../../api/client';
@@ -22,6 +23,17 @@ import { ActionButton } from '../../components/ui/ActionButton';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { getApiErrorMessage } from '../../store/apiError';
 
+interface PasswordFormInputs {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+interface SupportSettingsInputs {
+  helplineNumber: string;
+  supportEmail: string;
+}
+
 export default function UserProfile() {
   const { user, isLoading: authLoading } = useAuth();
   const profileLoading = authLoading || !user;
@@ -29,14 +41,26 @@ export default function UserProfile() {
   // Is user an admin or manager? (can edit support settings)
   const isAdmin = user?.role === 'super_admin' || user?.role === 'sub_admin' || user?.role === 'manager';
 
-  // Password Form State
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const passAction = useAsyncAction();
   const [supportLoading, setSupportLoading] = useState(true);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // React Hook Form for Password
+  const {
+    register: registerPass,
+    handleSubmit: handlePassSubmit,
+    watch: watchPass,
+    reset: resetPassForm,
+    formState: { errors: passErrors }
+  } = useForm<PasswordFormInputs>({
+    mode: 'onTouched',
+    defaultValues: {
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    }
+  });
 
   // Dynamic system settings (Helpline & Support Email)
   const [supportInfo, setSupportInfo] = useState({
@@ -44,9 +68,20 @@ export default function UserProfile() {
     supportEmail: 'support@mponline.gov.in'
   });
 
-  // Editable support fields (for admin)
-  const [editHelpline, setEditHelpline] = useState('');
-  const [editSupportEmail, setEditSupportEmail] = useState('');
+  // React Hook Form for Support Settings (Admin)
+  const {
+    register: registerContact,
+    handleSubmit: handleContactSubmitForm,
+    reset: resetContactForm,
+    formState: { errors: contactErrors }
+  } = useForm<SupportSettingsInputs>({
+    mode: 'onTouched',
+    defaultValues: {
+      helplineNumber: '',
+      supportEmail: ''
+    }
+  });
+
   const contactAction = useAsyncAction();
   const [contactSuccess, setContactSuccess] = useState('');
   const [contactError, setContactError] = useState('');
@@ -59,8 +94,7 @@ export default function UserProfile() {
           const hn = response.data.data.helplineNumber || '+91 0755 2700800';
           const se = response.data.data.supportEmail || 'support@mponline.gov.in';
           setSupportInfo({ helplineNumber: hn, supportEmail: se });
-          setEditHelpline(hn);
-          setEditSupportEmail(se);
+          resetContactForm({ helplineNumber: hn, supportEmail: se });
         }
       } catch (e) {
         console.error('Failed to fetch support settings:', e);
@@ -69,40 +103,22 @@ export default function UserProfile() {
       }
     };
     fetchSettings();
-  }, []);
+  }, [resetContactForm]);
 
-  const handlePasswordUpdate = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onPassSubmit = (data: PasswordFormInputs) => {
     setErrorMsg('');
     setSuccessMsg('');
-
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setErrorMsg('Kripya sabhi password fields ko bharein.');
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setErrorMsg('Naya password kam se kam 6 characters ka hona chahiye.');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setErrorMsg('New password aur Confirm password match nahi ho rahe.');
-      return;
-    }
 
     passAction.run(async () => {
       try {
         const res = await apiClient.post('/auth/change-password', {
-          currentPassword,
-          newPassword
+          currentPassword: data.currentPassword,
+          newPassword: data.newPassword
         });
 
         if (res.data.status === 'success') {
           setSuccessMsg(res.data.message || 'Password safaltapoorvak update ho gaya!');
-          setCurrentPassword('');
-          setNewPassword('');
-          setConfirmPassword('');
+          resetPassForm();
           setTimeout(() => setSuccessMsg(''), 5000);
           return true;
         }
@@ -116,21 +132,15 @@ export default function UserProfile() {
   };
 
   // Admin: Save system support settings handler
-  const handleContactSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onContactSubmit = (data: SupportSettingsInputs) => {
     setContactError('');
     setContactSuccess('');
-
-    if (!editHelpline.trim() || !editSupportEmail.trim()) {
-      setContactError('Helpline Number aur Support Email dono bharna zaroori hai.');
-      return;
-    }
 
     contactAction.run(async () => {
       try {
         const response = await apiClient.put('/settings', {
-          helplineNumber: editHelpline.trim(),
-          supportEmail: editSupportEmail.trim()
+          helplineNumber: data.helplineNumber.trim(),
+          supportEmail: data.supportEmail.trim()
         });
         if (response.data.status !== 'success') throw new Error(response.data.message || 'Settings update nahi ho payi.');
       } catch (err) {
@@ -138,7 +148,7 @@ export default function UserProfile() {
         throw err;
       }
       // Update local display too
-      setSupportInfo({ helplineNumber: editHelpline.trim(), supportEmail: editSupportEmail.trim() });
+      setSupportInfo({ helplineNumber: data.helplineNumber.trim(), supportEmail: data.supportEmail.trim() });
       setContactSuccess('Helpline Number aur Support Email successfully update ho gaye hain! Ab ye sabhi profile pages me dynamic dikhenge.');
       setTimeout(() => setContactSuccess(''), 4000);
     });
@@ -325,7 +335,7 @@ export default function UserProfile() {
                     <Skeleton className="h-10 w-full rounded-xl mt-2" />
                   </div>
                 ) : (
-                <form onSubmit={handleContactSubmit} className="space-y-4">
+                <form onSubmit={handleContactSubmitForm(onContactSubmit)} className="space-y-4" noValidate>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                       Helpline Mobile / Phone Number *
@@ -335,12 +345,19 @@ export default function UserProfile() {
                       <input
                         type="text"
                         placeholder="+91 0755 2700800"
-                        value={editHelpline}
-                        onChange={(e) => setEditHelpline(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white"
-                        required
+                        {...registerContact('helplineNumber', {
+                          required: 'Helpline Number enter karna zaroori hai',
+                          minLength: { value: 6, message: 'Valid phone number enter karein' }
+                        })}
+                        className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${contactErrors.helplineNumber ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-emerald-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                       />
                     </div>
+                    {contactErrors.helplineNumber && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3 inline" />
+                        <span>{contactErrors.helplineNumber.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -352,12 +369,22 @@ export default function UserProfile() {
                       <input
                         type="email"
                         placeholder="support@mponline.gov.in"
-                        value={editSupportEmail}
-                        onChange={(e) => setEditSupportEmail(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white"
-                        required
+                        {...registerContact('supportEmail', {
+                          required: 'Support Email enter karna zaroori hai',
+                          pattern: {
+                            value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                            message: 'Valid email address enter karein'
+                          }
+                        })}
+                        className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${contactErrors.supportEmail ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-emerald-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                       />
                     </div>
+                    {contactErrors.supportEmail && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3 inline" />
+                        <span>{contactErrors.supportEmail.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div className="pt-2">
@@ -367,7 +394,7 @@ export default function UserProfile() {
                       loadingText="Saving..."
                       successText="Settings Saved!"
                       errorText="Save Failed"
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                     >
                       <Save className="h-4 w-4" />
                       <span>Save System Support Settings</span>
@@ -430,7 +457,7 @@ export default function UserProfile() {
                 </div>
               )}
 
-              <form onSubmit={handlePasswordUpdate} className="space-y-3.5">
+              <form onSubmit={handlePassSubmit(onPassSubmit)} className="space-y-3.5" noValidate>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Current Password <span className="text-rose-500">*</span>
@@ -438,11 +465,17 @@ export default function UserProfile() {
                   <input
                     type="password"
                     placeholder="Purana password enter karein"
-                    value={currentPassword}
-                    onChange={e => setCurrentPassword(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    {...registerPass('currentPassword', {
+                      required: 'Current password enter karna zaroori hai'
+                    })}
+                    className={`w-full px-3 py-2 bg-slate-50 border ${passErrors.currentPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 focus:ring-blue-500'} rounded-xl text-xs focus:ring-2 focus:outline-none`}
                   />
+                  {passErrors.currentPassword && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{passErrors.currentPassword.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -452,12 +485,18 @@ export default function UserProfile() {
                   <input
                     type="password"
                     placeholder="Kam se kam 6 characters"
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    required
-                    minLength={6}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    {...registerPass('newPassword', {
+                      required: 'Naya password enter karna zaroori hai',
+                      minLength: { value: 6, message: 'Password kam se kam 6 characters ka hona chahiye' }
+                    })}
+                    className={`w-full px-3 py-2 bg-slate-50 border ${passErrors.newPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 focus:ring-blue-500'} rounded-xl text-xs focus:ring-2 focus:outline-none`}
                   />
+                  {passErrors.newPassword && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{passErrors.newPassword.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -467,11 +506,18 @@ export default function UserProfile() {
                   <input
                     type="password"
                     placeholder="New password dobara likhein"
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    {...registerPass('confirmPassword', {
+                      required: 'Confirm password enter karna zaroori hai',
+                      validate: (val) => val === watchPass('newPassword') || 'Confirm Password naye password se match nahi ho raha'
+                    })}
+                    className={`w-full px-3 py-2 bg-slate-50 border ${passErrors.confirmPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 focus:ring-blue-500'} rounded-xl text-xs focus:ring-2 focus:outline-none`}
                   />
+                  {passErrors.confirmPassword && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{passErrors.confirmPassword.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <ActionButton

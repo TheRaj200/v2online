@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import apiClient from '../../api/client';
 import {
@@ -26,6 +27,17 @@ import {
 import { useAsyncAction, useKeyedAsyncAction } from '../../hooks/useAsyncAction';
 import { ActionButton } from '../../components/ui/ActionButton';
 import { Skeleton, SkeletonTable } from '../../components/ui/Skeleton';
+
+interface AddOperatorFormData {
+  fullName: string;
+  mobile: string;
+  aadhaar?: string;
+  district: string;
+  officeName: string;
+  address?: string;
+  email?: string;
+  password: string;
+}
 
 // Axios / Error object se backend ka readable message
 const apiErrorText = (err: unknown, fallback: string) => {
@@ -111,17 +123,22 @@ export default function AdminOperators() {
   const [operatorAssignments, setOperatorAssignments] = useState<OperatorAssignmentItem[]>([]);
   const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
 
-  // Add Operator Form
-  const [form, setForm] = useState({
-    fullName: '',
-    mobile: '',
-    aadhaar: '',
-    district: '', // destination
-    officeName: '',
-    wardNo: '',
-    address: '', // area
-    email: '',
-    password: ''
+  const {
+    register: registerOperator,
+    handleSubmit: handleOperatorSubmitForm,
+    reset: resetOperatorForm,
+    formState: { errors: operatorErrors }
+  } = useForm<AddOperatorFormData>({
+    defaultValues: {
+      fullName: '',
+      mobile: '',
+      aadhaar: '',
+      district: '',
+      officeName: '',
+      address: '',
+      email: '',
+      password: ''
+    }
   });
 
   const fetchOperators = useCallback(async () => {
@@ -172,17 +189,25 @@ export default function AdminOperators() {
       o.district?.toLowerCase().includes(term);
   });
 
-  const handleAddOperator = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onAddOperatorSubmit = (data: AddOperatorFormData) => {
     addAction.run(async () => {
       setFormError('');
       setFormSuccess('');
 
       try {
-        const response = await apiClient.post('/users', {
-          ...form,
-          role: 'operator'
-        });
+        const payload = {
+          role: 'operator',
+          fullName: data.fullName.trim(),
+          mobile: data.mobile.trim(),
+          aadhaar: data.aadhaar?.trim() || '',
+          district: data.district.trim(),
+          officeName: data.officeName.trim(),
+          address: data.address?.trim() || '',
+          email: data.email?.trim() || '',
+          password: data.password
+        };
+
+        const response = await apiClient.post('/users', payload);
         if (response.data.status !== 'success') {
           throw new Error(response.data.message || 'Failed to add operator.');
         }
@@ -191,7 +216,7 @@ export default function AdminOperators() {
         setShowAddModal(false);
         setFormSuccess('');
         setPageSuccess(response.data.message || 'Operator added successfully!');
-        setForm({ fullName: '', mobile: '', aadhaar: '', district: '', officeName: '', wardNo: '', address: '', email: '', password: '' });
+        resetOperatorForm();
         setTimeout(() => setPageSuccess(''), 3000);
         await fetchOperators();
       } catch (err) {
@@ -598,7 +623,7 @@ export default function AdminOperators() {
               </button>
             </div>
 
-            <form onSubmit={handleAddOperator} className="p-5 space-y-4">
+            <form onSubmit={handleOperatorSubmitForm(onAddOperatorSubmit)} className="p-5 space-y-4" noValidate>
               {formError && (
                 <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-medium px-3 py-2 rounded-lg">
                   {formError}
@@ -615,24 +640,45 @@ export default function AdminOperators() {
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Name *</label>
                   <input
                     type="text"
-                    required
-                    value={form.fullName}
-                    onChange={(e) => setForm(prev => ({ ...prev, fullName: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                     placeholder="Operator Full Name"
+                    {...registerOperator('fullName', {
+                      required: 'Operator name enter karein.',
+                      minLength: { value: 3, message: 'Name kam se kam 3 characters ka hona chahiye.' }
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none ${
+                      operatorErrors.fullName ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {operatorErrors.fullName && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{operatorErrors.fullName.message}</span>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Mobile Number *</label>
                   <input
                     type="tel"
-                    required
                     maxLength={10}
-                    value={form.mobile}
-                    onChange={(e) => setForm(prev => ({ ...prev, mobile: e.target.value.replace(/\D/g, '') }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                     placeholder="10-digit mobile"
+                    {...registerOperator('mobile', {
+                      required: '10-digit mobile number enter karein.',
+                      pattern: {
+                        value: /^[6-9]\d{9}$/,
+                        message: 'Valid 10-digit mobile number (6-9 se shuru) enter karein.'
+                      }
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none ${
+                      operatorErrors.mobile ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {operatorErrors.mobile && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{operatorErrors.mobile.message}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -641,23 +687,43 @@ export default function AdminOperators() {
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Aadhaar Number</label>
                   <input
                     type="text"
-                    maxLength={14}
-                    value={form.aadhaar}
-                    onChange={(e) => setForm(prev => ({ ...prev, aadhaar: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                    placeholder="XXXX-XXXX-XXXX"
+                    maxLength={12}
+                    placeholder="12-digit Aadhaar"
+                    {...registerOperator('aadhaar', {
+                      pattern: {
+                        value: /^\d{12}$/,
+                        message: 'Aadhaar exactly 12 digits ka hona chahiye.'
+                      }
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none ${
+                      operatorErrors.aadhaar ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {operatorErrors.aadhaar && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{operatorErrors.aadhaar.message}</span>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Destination *</label>
                   <input
                     type="text"
-                    required
-                    value={form.district}
-                    onChange={(e) => setForm(prev => ({ ...prev, district: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                     placeholder="District / City"
+                    {...registerOperator('district', {
+                      required: 'Destination / District enter karein.'
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none ${
+                      operatorErrors.district ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {operatorErrors.district && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{operatorErrors.district.message}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -665,22 +731,29 @@ export default function AdminOperators() {
                 <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Office Name *</label>
                 <input
                   type="text"
-                  required
-                  value={form.officeName}
-                  onChange={(e) => setForm(prev => ({ ...prev, officeName: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                   placeholder="Office / Department Name"
+                  {...registerOperator('officeName', {
+                    required: 'Office / Department name enter karein.'
+                  })}
+                  className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none ${
+                    operatorErrors.officeName ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                  }`}
                 />
+                {operatorErrors.officeName && (
+                  <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    <span>{operatorErrors.officeName.message}</span>
+                  </p>
+                )}
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Area / Full Address</label>
                 <textarea
-                  value={form.address}
-                  onChange={(e) => setForm(prev => ({ ...prev, address: e.target.value }))}
                   rows={2}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500 resize-none"
                   placeholder="Area / full address..."
+                  {...registerOperator('address')}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none resize-none"
                 />
               </div>
 
@@ -689,23 +762,43 @@ export default function AdminOperators() {
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Email</label>
                   <input
                     type="email"
-                    value={form.email}
-                    onChange={(e) => setForm(prev => ({ ...prev, email: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                     placeholder="email@example.com"
+                    {...registerOperator('email', {
+                      pattern: {
+                        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                        message: 'Valid email address enter karein.'
+                      }
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none ${
+                      operatorErrors.email ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {operatorErrors.email && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{operatorErrors.email.message}</span>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Password *</label>
                   <input
                     type="password"
-                    required
-                    minLength={6}
-                    value={form.password}
-                    onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
                     placeholder="Min 6 characters"
+                    {...registerOperator('password', {
+                      required: 'Password enter karein.',
+                      minLength: { value: 6, message: 'Password at least 6 characters ka hona chahiye.' }
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none ${
+                      operatorErrors.password ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {operatorErrors.password && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{operatorErrors.password.message}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -715,7 +808,7 @@ export default function AdminOperators() {
                 loadingText="Adding Operator..."
                 successText="Operator Added!"
                 errorText="Failed"
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white text-xs font-bold py-3 rounded-xl shadow-lg transition-all disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white text-xs font-bold py-3 rounded-xl shadow-lg transition-all disabled:opacity-50 cursor-pointer"
               >
                 <UserPlus className="h-4 w-4" /> Add Operator
               </ActionButton>

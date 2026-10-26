@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import apiClient from '../../api/client';
 import { useAsyncAction, useKeyedAsyncAction } from '../../hooks/useAsyncAction';
@@ -14,13 +15,27 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
+  Trash2,
   X,
   Phone,
   Mail,
   MapPin,
   CheckCircle,
-  XCircle
+  XCircle,
+  AlertCircle
 } from 'lucide-react';
+
+interface AddUserFormData {
+  role: 'distributor' | 'manager' | 'sub_admin';
+  fullName: string;
+  mobile: string;
+  email?: string;
+  password: string;
+  district?: string;
+  aadhaar?: string;
+  officeName?: string;
+  address?: string;
+}
 
 interface UserItem {
   id: string;
@@ -61,7 +76,6 @@ const formatDateTime = (dateStr?: string) => {
     return dateStr;
   }
   try {
-    // Safari ke liye 'YYYY-MM-DD HH:MM:SS' -> ISO 'T' format
     const d = new Date(dateStr.replace(' ', 'T'));
     if (isNaN(d.getTime())) return dateStr;
     return d.toLocaleString('en-IN', {
@@ -90,18 +104,28 @@ export default function AdminUsers() {
   const createAction = useAsyncAction();
   const toggleAction = useKeyedAsyncAction();
 
-  // Add User Form
-  const [form, setForm] = useState({
-    fullName: '',
-    mobile: '',
-    email: '',
-    password: '',
-    role: 'distributor',
-    aadhaar: '',
-    district: '',
-    address: '',
-    officeName: ''
+  const {
+    register: registerUser,
+    handleSubmit: handleUserSubmitForm,
+    reset: resetUserForm,
+    watch: watchUserForm,
+    setValue: setUserValue,
+    formState: { errors: userErrors }
+  } = useForm<AddUserFormData>({
+    defaultValues: {
+      role: 'distributor',
+      fullName: '',
+      mobile: '',
+      email: '',
+      password: '',
+      district: '',
+      aadhaar: '',
+      officeName: '',
+      address: ''
+    }
   });
+
+  const selectedRole = watchUserForm('role');
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -129,14 +153,24 @@ export default function AdminUsers() {
     return matchesTab && matchesSearch;
   });
 
-  const handleAddUser = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onAddUserSubmit = (data: AddUserFormData) => {
     createAction.run(async () => {
       setFormError('');
       setFormSuccess('');
       let message = '';
       try {
-        const response = await apiClient.post('/users', form);
+        const payload = {
+          role: data.role,
+          fullName: data.fullName.trim(),
+          mobile: data.mobile.trim(),
+          email: data.email?.trim() || '',
+          password: data.password,
+          district: data.district?.trim() || '',
+          aadhaar: data.aadhaar?.trim() || '',
+          officeName: data.officeName?.trim() || '',
+          address: data.address?.trim() || ''
+        };
+        const response = await apiClient.post('/users', payload);
         if (response.data.status !== 'success') throw new Error(response.data.message || 'Failed to create user.');
         message = response.data.message;
       } catch (err) {
@@ -148,11 +182,14 @@ export default function AdminUsers() {
       setShowAddModal(false);
       setFormSuccess('');
       setPageSuccess(message || 'User created successfully!');
-      setForm({ fullName: '', mobile: '', email: '', password: '', role: 'distributor', aadhaar: '', district: '', address: '', officeName: '' });
+      resetUserForm();
       setTimeout(() => setPageSuccess(''), 4000);
       await fetchUsers();
     });
   };
+
+  const isRowBusy = (userId: string) =>
+    ['toggle', 'delete'].some(k => toggleAction.stateOf(`${k}-${userId}`) === 'loading');
 
   // Per-row 3-stage toggle (activate / deactivate)
   const handleToggle = (userId: string) =>
@@ -166,6 +203,23 @@ export default function AdminUsers() {
       }
       await fetchUsers();
     });
+
+  const handleDeleteUser = (user: UserItem) => {
+    if (!window.confirm(`Kya aap sure hain ki "${user.fullName}" (${user.role}) ko permanently delete karna chahte hain?`)) return;
+    toggleAction.run(`delete-${user.id}`, async () => {
+      setPageError('');
+      setPageSuccess('');
+      try {
+        const res = await apiClient.delete(`/users/${user.id}`);
+        setPageSuccess(res.data?.message || `User "${user.fullName}" deleted successfully.`);
+        setTimeout(() => setPageSuccess(''), 4000);
+      } catch (e) {
+        setPageError(getApiErrorMessage(e, 'Failed to delete user.'));
+        throw e;
+      }
+      await fetchUsers();
+    });
+  };
 
   const tabs = [
     { key: 'ALL', label: 'All Users', count: users.length },
@@ -337,22 +391,36 @@ export default function AdminUsers() {
                       <td className="px-4 py-3 text-slate-600 text-[11px] space-y-0.5 min-w-[170px]">
                         <div><span className="text-[9px] font-bold uppercase text-slate-400"> </span><strong>{formatDateTime(u.requestedAt || u.createdAt)}</strong></div>
                       </td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-3 text-center whitespace-nowrap space-x-1.5">
                         <ActionButton
                           state={toggleAction.stateOf(`toggle-${u.id}`)}
                           onClick={() => handleToggle(u.id)}
+                          disabled={isRowBusy(u.id)}
                           loadingText={u.isActive ? 'Deactivating...' : 'Activating...'}
                           successText="Updated"
                           errorText="Failed"
-                          className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
                             u.isActive
-                              ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'
+                              ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
                               : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200'
                           }`}
                           title={u.isActive ? 'Deactivate User' : 'Activate User'}
                         >
                           {u.isActive ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                           {u.isActive ? 'Deactivate' : 'Activate'}
+                        </ActionButton>
+                        <ActionButton
+                          state={toggleAction.stateOf(`delete-${u.id}`)}
+                          onClick={() => handleDeleteUser(u)}
+                          disabled={isRowBusy(u.id)}
+                          loadingText="Deleting..."
+                          successText="Deleted"
+                          errorText="Failed"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-all cursor-pointer"
+                          title="Delete Staff Permanently"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Delete
                         </ActionButton>
                       </td>
                     </tr>
@@ -383,7 +451,7 @@ export default function AdminUsers() {
               </button>
             </div>
 
-            <form onSubmit={handleAddUser} className="p-5 space-y-4">
+            <form onSubmit={handleUserSubmitForm(onAddUserSubmit)} className="p-5 space-y-4" noValidate>
               {formError && (
                 <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-medium px-3 py-2 rounded-lg">
                   {formError}
@@ -403,9 +471,9 @@ export default function AdminUsers() {
                     <button
                       key={r}
                       type="button"
-                      onClick={() => setForm(prev => ({ ...prev, role: r }))}
-                      className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border-2 transition-all ${
-                        form.role === r
+                      onClick={() => setUserValue('role', r, { shouldValidate: true })}
+                      className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border-2 transition-all cursor-pointer ${
+                        selectedRole === r
                           ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm'
                           : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                       }`}
@@ -424,24 +492,45 @@ export default function AdminUsers() {
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Full Name *</label>
                   <input
                     type="text"
-                    required
-                    value={form.fullName}
-                    onChange={(e) => setForm(prev => ({ ...prev, fullName: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="Full Name"
+                    {...registerUser('fullName', {
+                      required: 'Full Name enter karein.',
+                      minLength: { value: 3, message: 'Name kam se kam 3 characters ka hona chahiye.' }
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                      userErrors.fullName ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {userErrors.fullName && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{userErrors.fullName.message}</span>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Mobile *</label>
                   <input
                     type="tel"
-                    required
                     maxLength={10}
-                    value={form.mobile}
-                    onChange={(e) => setForm(prev => ({ ...prev, mobile: e.target.value.replace(/\D/g, '') }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="10-digit mobile"
+                    {...registerUser('mobile', {
+                      required: '10-digit mobile number enter karein.',
+                      pattern: {
+                        value: /^[6-9]\d{9}$/,
+                        message: 'Valid 10-digit mobile number (6-9 se shuru) enter karein.'
+                      }
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                      userErrors.mobile ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {userErrors.mobile && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{userErrors.mobile.message}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -450,23 +539,43 @@ export default function AdminUsers() {
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Email</label>
                   <input
                     type="email"
-                    value={form.email}
-                    onChange={(e) => setForm(prev => ({ ...prev, email: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="email@example.com"
+                    {...registerUser('email', {
+                      pattern: {
+                        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                        message: 'Valid email address enter karein.'
+                      }
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                      userErrors.email ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {userErrors.email && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{userErrors.email.message}</span>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Password *</label>
                   <input
                     type="password"
-                    required
-                    minLength={6}
-                    value={form.password}
-                    onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="Min 6 characters"
+                    {...registerUser('password', {
+                      required: 'Password enter karein.',
+                      minLength: { value: 6, message: 'Password at least 6 characters ka hona chahiye.' }
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                      userErrors.password ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {userErrors.password && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{userErrors.password.message}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -475,22 +584,33 @@ export default function AdminUsers() {
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">District</label>
                   <input
                     type="text"
-                    value={form.district}
-                    onChange={(e) => setForm(prev => ({ ...prev, district: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="District Name"
+                    {...registerUser('district')}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Aadhaar Number</label>
                   <input
                     type="text"
-                    maxLength={14}
-                    value={form.aadhaar}
-                    onChange={(e) => setForm(prev => ({ ...prev, aadhaar: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    placeholder="XXXX-XXXX-XXXX"
+                    maxLength={12}
+                    placeholder="12-digit Aadhaar"
+                    {...registerUser('aadhaar', {
+                      pattern: {
+                        value: /^\d{12}$/,
+                        message: 'Aadhaar exactly 12 digits ka hona chahiye.'
+                      }
+                    })}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                      userErrors.aadhaar ? 'border-red-500 bg-red-50/20' : 'border-slate-200'
+                    }`}
                   />
+                  {userErrors.aadhaar && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{userErrors.aadhaar.message}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -498,21 +618,19 @@ export default function AdminUsers() {
                 <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Office / Organization Name</label>
                 <input
                   type="text"
-                  value={form.officeName}
-                  onChange={(e) => setForm(prev => ({ ...prev, officeName: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   placeholder="Office / Organization Name"
+                  {...registerUser('officeName')}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Full Address</label>
                 <textarea
-                  value={form.address}
-                  onChange={(e) => setForm(prev => ({ ...prev, address: e.target.value }))}
                   rows={2}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-none"
                   placeholder="Full address..."
+                  {...registerUser('address')}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none"
                 />
               </div>
 
@@ -522,9 +640,9 @@ export default function AdminUsers() {
                 loadingText="Creating..."
                 successText="User Created!"
                 errorText="Failed"
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold py-3 rounded-xl shadow-lg transition-all disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold py-3 rounded-xl shadow-lg transition-all disabled:opacity-50 cursor-pointer"
               >
-                <UserPlus className="h-4 w-4" /> Create {roleLabels[form.role]}
+                <UserPlus className="h-4 w-4" /> Create {roleLabels[selectedRole] || 'User'}
               </ActionButton>
             </form>
           </div>

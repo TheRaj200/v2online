@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
 import apiClient from '../../api/client';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { ActionButton } from '../../components/ui/ActionButton';
@@ -20,6 +21,25 @@ import {
   Award
 } from 'lucide-react';
 
+interface RegisterStep1Inputs {
+  fullName: string;
+  mobile: string;
+  email: string;
+  shopName?: string;
+  officeName?: string;
+  designation?: string;
+  wardNumber?: string;
+  area?: string;
+  aadhaarNumber?: string;
+  address: string;
+}
+
+interface RegisterStep2Inputs {
+  otp: string;
+  password: string;
+  confirmPassword: string;
+}
+
 export const RegisterPage: React.FC = () => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [role, setRole] = useState<'agent' | 'operator'>('agent');
@@ -28,58 +48,69 @@ export const RegisterPage: React.FC = () => {
   const resendOtpAction = useAsyncAction();
   const verifyAction = useAsyncAction();
   const [errorMessage, setErrorMessage] = useState('');
+  const [resendMessage, setResendMessage] = useState('');
 
-  // Form State
-  const [fullName, setFullName] = useState('');
-  const [mobile, setMobile] = useState('');
-  const [shopName, setShopName] = useState('');
-  const [officeName, setOfficeName] = useState('');
-  const [designation, setDesignation] = useState('');
-  const [wardNumber] = useState('');
-  const [area, setArea] = useState('');
-  const [email, setEmail] = useState('');
-  const [aadhaarNumber, setAadhaarNumber] = useState('');
-  const [address, setAddress] = useState('');
+  // React Hook Form for Step 1
+  const {
+    register: registerStep1,
+    handleSubmit: handleStep1Submit,
+    getValues: getStep1Values,
+    formState: { errors: step1Errors }
+  } = useForm<RegisterStep1Inputs>({
+    mode: 'onTouched',
+    defaultValues: {
+      fullName: '',
+      mobile: '',
+      email: '',
+      shopName: '',
+      officeName: '',
+      designation: '',
+      wardNumber: '',
+      area: '',
+      aadhaarNumber: '',
+      address: ''
+    }
+  });
 
-  // Step 2 State
-  const [otp, setOtp] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  // React Hook Form for Step 2
+  const {
+    register: registerStep2,
+    handleSubmit: handleStep2Submit,
+    watch: watchStep2,
+    formState: { errors: step2Errors }
+  } = useForm<RegisterStep2Inputs>({
+    mode: 'onTouched',
+    defaultValues: {
+      otp: '',
+      password: '',
+      confirmPassword: ''
+    }
+  });
 
-  // Step 1: Request OTP
-  const handleRequestOtp = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Helper to build payload from Step 1 values
+  const buildOtpPayload = (data?: RegisterStep1Inputs) => {
+    const values = data || getStep1Values();
+    return {
+      role,
+      full_name: values.fullName,
+      mobile: values.mobile,
+      shop_name: values.shopName || '',
+      office_name: values.officeName || '',
+      designation: values.designation || '',
+      ward_no: values.wardNumber || '',
+      area: values.area || '',
+      email: values.email,
+      aadhaar_number: values.aadhaarNumber || '',
+      address: values.address
+    };
+  };
+
+  // Step 1: Submit handler
+  const onStep1Submit = (data: RegisterStep1Inputs) => {
     setErrorMessage('');
-
-    if (!fullName.trim()) {
-      setErrorMessage('Kripya apna poora naam enter karein.');
-      return;
-    }
-
-    if (mobile.length !== 10) {
-      setErrorMessage('Kripya 10-digit valid mobile number enter karein.');
-      return;
-    }
-
-    // OTP sirf email par jaata hai, isliye valid email zaroori hai
-    if (!/^[^@ ]+@[^@ ]+[.][^@ ]+$/.test(email.trim())) {
-      setErrorMessage('Kripya valid Email Address enter karein. OTP isi email par bheja jayega.');
-      return;
-    }
-
-    if (role === 'agent' && !shopName) {
-      setErrorMessage('Shop / Kiosk Name enter karna zaroori hai.');
-      return;
-    }
-
-    if (role === 'operator' && !officeName) {
-      setErrorMessage('Office / Department Name enter karna zaroori hai.');
-      return;
-    }
-
     sendOtpAction.run(async () => {
       try {
-        const response = await apiClient.post('/auth/register-otp', buildOtpPayload());
+        const response = await apiClient.post('/auth/register-otp', buildOtpPayload(data));
         if (response.data.status === 'success') {
           setStep(2);
           return true;
@@ -92,23 +123,6 @@ export const RegisterPage: React.FC = () => {
       }
     });
   };
-
-  // Send + Resend dono ka same payload
-  const buildOtpPayload = () => ({
-    role,
-    full_name: fullName,
-    mobile,
-    shop_name: shopName,
-    office_name: officeName,
-    designation,
-    ward_no: wardNumber,
-    area,
-    email,
-    aadhaar_number: aadhaarNumber,
-    address
-  });
-
-  const [resendMessage, setResendMessage] = useState('');
 
   // Resend OTP Handler
   const handleResendOtp = () => {
@@ -131,32 +145,16 @@ export const RegisterPage: React.FC = () => {
   };
 
   // Step 2: Verify OTP & Complete Self-Registration
-  const handleVerifyOtp = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onStep2Submit = (data: RegisterStep2Inputs) => {
     setErrorMessage('');
-
-    if (otp.length !== 6) {
-      setErrorMessage('Kripya 6-digit OTP enter karein.');
-      return;
-    }
-
-    if (password.length < 6) {
-      setErrorMessage('Password kam se kam 6 characters ka hona chahiye.');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setErrorMessage('Password aur Confirm Password match nahi kar rahe hain.');
-      return;
-    }
+    const step1Data = getStep1Values();
 
     verifyAction.run(async () => {
       try {
-        // Backend OTP verify karke user + shop record (pending approval) create karta hai
         const response = await apiClient.post('/auth/verify-registration', {
-          mobile,
-          otp,
-          password
+          mobile: step1Data.mobile,
+          otp: data.otp,
+          password: data.password
         });
         if (response.data?.status && response.data.status !== 'success') {
           setErrorMessage(response.data.message || 'Verification failed. Kripya sahi OTP daalein.');
@@ -221,7 +219,7 @@ export const RegisterPage: React.FC = () => {
               </div>
             )}
 
-            {/* STEP 1: Details & WhatsApp OTP */}
+            {/* STEP 1: Details & Email OTP */}
             {step === 1 && (
               <div>
                 <div className="text-center mb-6">
@@ -236,10 +234,11 @@ export const RegisterPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setRole('agent')}
-                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all ${role === 'agent'
+                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      role === 'agent'
                         ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-sm ring-1 ring-blue-600'
                         : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
+                    }`}
                   >
                     <Store className="h-4 w-4" />
                     <span>MP Online Shop (Retailer)</span>
@@ -248,17 +247,18 @@ export const RegisterPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setRole('operator')}
-                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all ${role === 'operator'
+                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      role === 'operator'
                         ? 'bg-emerald-50 border-emerald-600 text-emerald-700 shadow-sm ring-1 ring-emerald-600'
                         : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
+                    }`}
                   >
                     <Briefcase className="h-4 w-4" />
                     <span>Processing Officer (Operator)</span>
                   </button>
                 </div>
 
-                <form onSubmit={handleRequestOtp} className="space-y-4">
+                <form onSubmit={handleStep1Submit(onStep1Submit)} className="space-y-4" noValidate>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Full Name */}
                     <div>
@@ -270,12 +270,19 @@ export const RegisterPage: React.FC = () => {
                         <input
                           type="text"
                           placeholder={role === 'operator' ? 'Operator Name' : 'Owner / Full Name'}
-                          value={fullName}
-                          onChange={(e) => setFullName(e.target.value)}
-                          className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                          required
+                          {...registerStep1('fullName', {
+                            required: 'Poora naam enter karna zaroori hai',
+                            minLength: { value: 2, message: 'Kam se kam 2 characters required' }
+                          })}
+                          className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${step1Errors.fullName ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                         />
                       </div>
+                      {step1Errors.fullName && (
+                        <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3 inline" />
+                          <span>{step1Errors.fullName.message}</span>
+                        </p>
+                      )}
                     </div>
 
                     {/* WhatsApp Mobile */}
@@ -289,12 +296,22 @@ export const RegisterPage: React.FC = () => {
                           type="tel"
                           maxLength={10}
                           placeholder="10-digit mobile"
-                          value={mobile}
-                          onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
-                          className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                          required
+                          {...registerStep1('mobile', {
+                            required: 'Mobile number enter karna zaroori hai',
+                            pattern: {
+                              value: /^[6-9]\d{9}$/,
+                              message: 'Valid 10-digit mobile number enter karein'
+                            }
+                          })}
+                          className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${step1Errors.mobile ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                         />
                       </div>
+                      {step1Errors.mobile && (
+                        <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3 inline" />
+                          <span>{step1Errors.mobile.message}</span>
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -308,12 +325,23 @@ export const RegisterPage: React.FC = () => {
                         <input
                           type="text"
                           placeholder="e.g. Sharma MP Online & CSC Center"
-                          value={shopName}
-                          onChange={(e) => setShopName(e.target.value)}
-                          className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                          required
+                          {...registerStep1('shopName', {
+                            validate: (val) => {
+                              if (role === 'agent' && (!val || !val.trim())) {
+                                return 'Shop / Kiosk Name enter karna zaroori hai';
+                              }
+                              return true;
+                            }
+                          })}
+                          className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${step1Errors.shopName ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                         />
                       </div>
+                      {step1Errors.shopName && (
+                        <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3 inline" />
+                          <span>{step1Errors.shopName.message}</span>
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -327,12 +355,23 @@ export const RegisterPage: React.FC = () => {
                           <input
                             type="text"
                             placeholder="e.g. Senior Operator / Clerk"
-                            value={designation}
-                            onChange={(e) => setDesignation(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white"
-                            required
+                            {...registerStep1('designation', {
+                              validate: (val) => {
+                                if (role === 'operator' && (!val || !val.trim())) {
+                                  return 'Designation enter karna zaroori hai';
+                                }
+                                return true;
+                              }
+                            })}
+                            className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${step1Errors.designation ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-emerald-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                           />
                         </div>
+                        {step1Errors.designation && (
+                          <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3 inline" />
+                            <span>{step1Errors.designation.message}</span>
+                          </p>
+                        )}
                       </div>
 
                       {/* Office Name */}
@@ -345,12 +384,23 @@ export const RegisterPage: React.FC = () => {
                           <input
                             type="text"
                             placeholder="e.g. District E-Governance Office"
-                            value={officeName}
-                            onChange={(e) => setOfficeName(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white"
-                            required
+                            {...registerStep1('officeName', {
+                              validate: (val) => {
+                                if (role === 'operator' && (!val || !val.trim())) {
+                                  return 'Office / Department name enter karna zaroori hai';
+                                }
+                                return true;
+                              }
+                            })}
+                            className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${step1Errors.officeName ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-emerald-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                           />
                         </div>
+                        {step1Errors.officeName && (
+                          <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3 inline" />
+                            <span>{step1Errors.officeName.message}</span>
+                          </p>
+                        )}
                       </div>
                     </div>
                   )}
@@ -364,11 +414,21 @@ export const RegisterPage: React.FC = () => {
                       <input
                         type="email"
                         placeholder="email@example.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                        required
+                        {...registerStep1('email', {
+                          required: 'Email address enter karna zaroori hai',
+                          pattern: {
+                            value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                            message: 'Valid email address enter karein (OTP isi email par aayega)'
+                          }
+                        })}
+                        className={`w-full px-3 py-2.5 bg-slate-50 border ${step1Errors.email ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                       />
+                      {step1Errors.email && (
+                        <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3 inline" />
+                          <span>{step1Errors.email.message}</span>
+                        </p>
+                      )}
                     </div>
 
                     {/* Aadhaar Number */}
@@ -382,11 +442,23 @@ export const RegisterPage: React.FC = () => {
                           type="text"
                           maxLength={12}
                           placeholder="12-digit Aadhaar No."
-                          value={aadhaarNumber}
-                          onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, ''))}
-                          className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
+                          {...registerStep1('aadhaarNumber', {
+                            validate: (val) => {
+                              if (val && !/^\d{12}$/.test(val)) {
+                                return 'Aadhaar 12-digits ka hona chahiye';
+                              }
+                              return true;
+                            }
+                          })}
+                          className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${step1Errors.aadhaarNumber ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                         />
                       </div>
+                      {step1Errors.aadhaarNumber && (
+                        <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3 inline" />
+                          <span>{step1Errors.aadhaarNumber.message}</span>
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -402,8 +474,7 @@ export const RegisterPage: React.FC = () => {
                           <input
                             type="text"
                             placeholder="Area / Tehsil Name"
-                            value={area}
-                            onChange={(e) => setArea(e.target.value)}
+                            {...registerStep1('area')}
                             className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white"
                           />
                         </div>
@@ -418,11 +489,18 @@ export const RegisterPage: React.FC = () => {
                     <input
                       type="text"
                       placeholder="Shop / Office detailed address"
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                      required
+                      {...registerStep1('address', {
+                        required: 'Full address enter karna zaroori hai',
+                        minLength: { value: 5, message: 'Address kam se kam 5 characters ka hona chahiye' }
+                      })}
+                      className={`w-full px-3 py-2.5 bg-slate-50 border ${step1Errors.address ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                     />
+                    {step1Errors.address && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3 inline" />
+                        <span>{step1Errors.address.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div className="pt-2">
@@ -432,7 +510,7 @@ export const RegisterPage: React.FC = () => {
                       loadingText="Sending OTP..."
                       successText="OTP Sent!"
                       errorText="Failed"
-                      className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-md text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition-all"
+                      className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-md text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition-all cursor-pointer"
                     >
                       <span>Send Email OTP</span>
                       <ArrowRight className="h-4 w-4" />
@@ -450,7 +528,7 @@ export const RegisterPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setStep(1)}
-                    className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
+                    className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 cursor-pointer"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                     <span>Change Details</span>
@@ -458,7 +536,7 @@ export const RegisterPage: React.FC = () => {
                 </div>
 
                 <div className="text-xs text-slate-600 mb-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-amber-50 p-3 rounded-xl border border-blue-200/60 shadow-xs">
-                  <span>OTP sent to Email <strong className="text-blue-700">{email}</strong></span>
+                  <span>OTP sent to Email <strong className="text-blue-700">{getStep1Values('email')}</strong></span>
                   <span className="block text-[11px] text-slate-500 mt-0.5">⏱️ OTP is valid for 5 minutes. Inbox / Spam folder bhi check karein.</span>
                 </div>
 
@@ -469,7 +547,7 @@ export const RegisterPage: React.FC = () => {
                   </div>
                 )}
 
-                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <form onSubmit={handleStep2Submit(onStep2Submit)} className="space-y-4" noValidate>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                       Enter 6-Digit OTP *
@@ -480,12 +558,22 @@ export const RegisterPage: React.FC = () => {
                         type="text"
                         maxLength={6}
                         placeholder="123456"
-                        value={otp}
-                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 tracking-widest text-center text-base font-bold focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white"
-                        required
+                        {...registerStep2('otp', {
+                          required: '6-digit OTP code enter karein',
+                          pattern: {
+                            value: /^\d{6}$/,
+                            message: 'OTP sirf 6 digits ka hona chahiye'
+                          }
+                        })}
+                        className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${step2Errors.otp ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-emerald-600'} rounded-xl text-slate-900 tracking-widest text-center text-base font-bold focus:outline-none focus:ring-2 focus:bg-white`}
                       />
                     </div>
+                    {step2Errors.otp && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center justify-center gap-1">
+                        <AlertCircle className="h-3 w-3 inline" />
+                        <span>{step2Errors.otp.message}</span>
+                      </p>
+                    )}
                     <div className="mt-1.5 flex justify-end">
                       <ActionButton
                         state={resendOtpAction.state}
@@ -495,7 +583,7 @@ export const RegisterPage: React.FC = () => {
                         successText="OTP Sent!"
                         errorText="Resend Failed"
                         keepColorOnResult
-                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:opacity-50 flex items-center gap-1"
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:opacity-50 flex items-center gap-1 cursor-pointer"
                       >
                         <RotateCcw className="h-3 w-3" />
                         <span>Resend Email OTP</span>
@@ -512,12 +600,22 @@ export const RegisterPage: React.FC = () => {
                       <input
                         type="password"
                         placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                        required
+                        {...registerStep2('password', {
+                          required: 'Password enter karna zaroori hai',
+                          minLength: {
+                            value: 6,
+                            message: 'Password kam se kam 6 characters ka hona chahiye'
+                          }
+                        })}
+                        className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${step2Errors.password ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                       />
                     </div>
+                    {step2Errors.password && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3 inline" />
+                        <span>{step2Errors.password.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -529,12 +627,20 @@ export const RegisterPage: React.FC = () => {
                       <input
                         type="password"
                         placeholder="••••••••"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                        required
+                        {...registerStep2('confirmPassword', {
+                          required: 'Confirm password enter karna zaroori hai',
+                          validate: (val) =>
+                            val === watchStep2('password') || 'Password aur Confirm Password match nahi kar rahe hain'
+                        })}
+                        className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${step2Errors.confirmPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                       />
                     </div>
+                    {step2Errors.confirmPassword && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3 inline" />
+                        <span>{step2Errors.confirmPassword.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div className="pt-2">
@@ -545,7 +651,7 @@ export const RegisterPage: React.FC = () => {
                       loadingText="Verifying..."
                       successText="Registered!"
                       errorText="Verification Failed"
-                      className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-md text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 transition-all"
+                      className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-md text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 transition-all cursor-pointer"
                     >
                       <span>Complete Registration</span>
                       <CheckCircle2 className="h-4 w-4" />

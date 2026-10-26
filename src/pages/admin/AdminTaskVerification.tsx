@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import apiClient, { FILE_BASE_URL } from '../../api/client';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
@@ -17,8 +18,13 @@ import {
   X,
   Download,
   XCircle,
-  RefreshCw
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
+
+interface RejectTaskFormData {
+  reason: string;
+}
 
 interface ApplicationDoc {
   label: string;
@@ -94,12 +100,20 @@ export default function AdminTaskVerification() {
   const [successMsg, setSuccessMsg] = useState('');
   const [viewModalTask, setViewModalTask] = useState<ApplicationItem | null>(null);
   const [rejectModalTask, setRejectModalTask] = useState<ApplicationItem | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   // Skeleton sirf pehli baar load par
   const [hasLoaded, setHasLoaded] = useState(false);
   const verifyAction = useAsyncAction();
   const rejectAction = useAsyncAction();
+
+  const {
+    register: registerReject,
+    handleSubmit: handleRejectSubmitForm,
+    reset: resetRejectForm,
+    formState: { errors: rejectErrors }
+  } = useForm<RejectTaskFormData>({
+    defaultValues: { reason: '' }
+  });
 
   const fetchVerificationQueue = useCallback(async () => {
     setIsLoading(true);
@@ -119,7 +133,7 @@ export default function AdminTaskVerification() {
   // Reject modal band karte waqt purana reason clear karna zaroori hai
   const closeRejectModal = () => {
     setRejectModalTask(null);
-    setRejectReason('');
+    resetRejectForm();
   };
 
   useEffect(() => {
@@ -260,8 +274,7 @@ export default function AdminTaskVerification() {
       setTimeout(() => setSuccessMsg(''), 5000);
     });
 
-  const handleReject = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onRejectSubmit = (data: RejectTaskFormData) => {
     const task = rejectModalTask;
     if (!task) return;
 
@@ -269,7 +282,7 @@ export default function AdminTaskVerification() {
       setErrorMsg('');
       try {
         const res = await apiClient.patch(`/applications/${task.id}/reject`, {
-          reason: rejectReason || 'Rejected by Admin during verification'
+          reason: data.reason.trim()
         });
         if (res.data.status !== 'success') throw new Error(res.data.message || 'Failed to reject task.');
       } catch (err) {
@@ -739,7 +752,7 @@ export default function AdminTaskVerification() {
                     onClick={() => {
                       const t = viewModalTask;
                       setErrorMsg('');
-                      setRejectReason('');
+                      resetRejectForm();
                       setRejectModalTask(t);
                     }}
                     className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 cursor-pointer"
@@ -794,7 +807,7 @@ export default function AdminTaskVerification() {
                 <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-xs font-semibold">{errorMsg}</div>
               )}
 
-              <form onSubmit={handleReject} className="space-y-4">
+              <form onSubmit={handleRejectSubmitForm(onRejectSubmit)} className="space-y-4" noValidate>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Rejection Reason *
@@ -802,18 +815,27 @@ export default function AdminTaskVerification() {
                   <textarea
                     rows={3}
                     placeholder="Specify audit rejection reason..."
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    required
+                    {...registerReject('reason', {
+                      required: 'Rejection reason enter karein.',
+                      minLength: { value: 5, message: 'Reason kam se kam 5 characters ka hona chahiye.' }
+                    })}
+                    className={`w-full bg-slate-50 border rounded-xl p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                      rejectErrors.reason ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-red-500'
+                    }`}
                   />
+                  {rejectErrors.reason && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{rejectErrors.reason.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-2 flex justify-end gap-3">
                   <button
                     type="button"
                     onClick={closeRejectModal}
-                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -824,7 +846,7 @@ export default function AdminTaskVerification() {
                     loadingText="Rejecting..."
                     successText="Rejected & Refunded"
                     errorText="Rejection Failed"
-                    className="disabled:opacity-60 disabled:cursor-not-allowed px-4.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5"
+                    className="disabled:opacity-60 disabled:cursor-not-allowed px-4.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5 cursor-pointer"
                   >
                     <XCircle className="h-4 w-4" />
                     <span>Confirm Rejection & Refund</span>

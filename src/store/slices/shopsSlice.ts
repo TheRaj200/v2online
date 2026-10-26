@@ -99,6 +99,11 @@ export const approveShopDeletion = shopAction(
   ({ shopId }) => apiClient.patch(`/shops/${shopId}/approve-deletion`),
   'Failed to approve deletion.'
 );
+export const deleteShopPermanentlyThunk = shopAction(
+  'deletePermanently',
+  ({ shopId }) => apiClient.delete(`/shops/${shopId}`),
+  'Failed to delete shop.'
+);
 
 const shopsSlice = createSlice({
   name: 'shops',

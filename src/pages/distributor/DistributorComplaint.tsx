@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { useAuth } from '../../context/AuthContext';
 import { complaintStore, type ComplaintTicket } from '../../services/complaintStore';
@@ -21,6 +22,12 @@ import {
   FileText
 } from 'lucide-react';
 
+interface ComplaintTicketInputs {
+  category: string;
+  subject: string;
+  description: string;
+}
+
 export default function DistributorComplaint() {
   const { user } = useAuth();
   const dispatch = useAppDispatch();
@@ -29,13 +36,23 @@ export default function DistributorComplaint() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewTicket, setViewTicket] = useState<ComplaintTicket | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Form State
-  const [subject, setSubject] = useState('');
-  const [category, setCategory] = useState('Technical Issue');
-  const [description, setDescription] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // React Hook Form for Complaints
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors }
+  } = useForm<ComplaintTicketInputs>({
+    mode: 'onTouched',
+    defaultValues: {
+      category: 'Technical Issue',
+      subject: '',
+      description: ''
+    }
+  });
 
   // Backend non-admin ko sirf apne tickets bhejta hai; yahan bhi userId se filter (agent / operator / distributor sab)
   const complaints = useMemo<ComplaintTicket[]>(() => {
@@ -51,32 +68,24 @@ export default function DistributorComplaint() {
 
   const submitAction = useAsyncAction();
 
-  const handleSubmitComplaint = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onComplaintSubmit = (data: ComplaintTicketInputs) => {
     setErrorMsg('');
-
-    if (!subject.trim() || !description.trim()) {
-      setErrorMsg('Please enter both Subject and Description for your complaint ticket.');
-      return;
-    }
 
     submitAction.run(async () => {
       try {
-        // Server fail hone par addComplaint throw karta hai (koi fake offline ticket nahi)
         const newTicket = await complaintStore.addComplaint({
           raisedByUserId: user?.id,
           raisedByName: user?.full_name || 'Portal User',
           raisedByRole: (user?.role as any) || 'agent',
-          subject,
-          category,
-          description
+          subject: data.subject,
+          category: data.category,
+          description: data.description
         });
 
         // Close dialog immediately without delay
         setIsModalOpen(false);
         setSuccessMsg(`Complaint Ticket "${newTicket.ticketNo}" raised successfully! Our support team will review it.`);
-        setSubject('');
-        setDescription('');
+        reset();
         setTimeout(() => setSuccessMsg(''), 5000);
       } catch (err) {
         setErrorMsg(err instanceof Error ? err.message : 'Complaint submit failed. Kripya dobara try karein.');
@@ -365,7 +374,7 @@ export default function DistributorComplaint() {
                 </button>
               </div>
 
-              <form onSubmit={handleSubmitComplaint} className="space-y-4">
+              <form onSubmit={handleSubmit(onComplaintSubmit)} className="space-y-4" noValidate>
                 
                 {errorMsg && (
                   <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
@@ -379,8 +388,7 @@ export default function DistributorComplaint() {
                     Select Complaint Category *
                   </label>
                   <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
+                    {...register('category', { required: 'Category select karna zaroori hai' })}
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600"
                   >
                     <option value="Technical Issue">Technical Glitch / Portal Bug</option>
@@ -398,11 +406,18 @@ export default function DistributorComplaint() {
                   <input
                     type="text"
                     placeholder="Brief title of the issue..."
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600"
-                    required
+                    {...register('subject', {
+                      required: 'Subject enter karna zaroori hai',
+                      minLength: { value: 3, message: 'Subject kam se kam 3 characters ka hona chahiye' }
+                    })}
+                    className={`w-full bg-slate-50 border ${errors.subject ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-red-600'} rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                   />
+                  {errors.subject && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{errors.subject.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -412,11 +427,18 @@ export default function DistributorComplaint() {
                   <textarea
                     rows={4}
                     placeholder="Explain the problem in detail with shop name or application reference number..."
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600"
-                    required
+                    {...register('description', {
+                      required: 'Description enter karna zaroori hai',
+                      minLength: { value: 10, message: 'Description kam se kam 10 characters ka hona chahiye' }
+                    })}
+                    className={`w-full bg-slate-50 border ${errors.description ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-red-600'} rounded-xl p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                   />
+                  {errors.description && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{errors.description.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-2 flex justify-end gap-3">

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { useAppDispatch, useAppSelector, selectComplaints, selectComplaintsStatus, isInitialLoading } from '../../store/hooks';
 import { fetchComplaints, updateComplaintStatus, sortComplaints, type ComplaintTicket } from '../../store/slices/complaintsSlice';
@@ -15,8 +16,14 @@ import {
   User as UserIcon,
   Tag,
   FileText,
-  XCircle
+  XCircle,
+  AlertCircle
 } from 'lucide-react';
+
+interface ComplaintStatusFormData {
+  status: 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'CLOSED';
+  resolutionNote: string;
+}
 
 export default function AdminComplaints() {
   const dispatch = useAppDispatch();
@@ -31,11 +38,21 @@ export default function AdminComplaints() {
   // Modal state
   const [selectedTicket, setSelectedTicket] = useState<ComplaintTicket | null>(null);
   const [viewTicket, setViewTicket] = useState<ComplaintTicket | null>(null);
-  const [status, setStatus] = useState<'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'CLOSED'>('IN_REVIEW');
-  const [resolutionNote, setResolutionNote] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const saveAction = useAsyncAction();
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors }
+  } = useForm<ComplaintStatusFormData>({
+    defaultValues: {
+      status: 'IN_REVIEW',
+      resolutionNote: ''
+    }
+  });
 
   // Page open hote hi fresh tickets fetch (pehle mount par refresh nahi hota tha)
   useEffect(() => {
@@ -44,25 +61,30 @@ export default function AdminComplaints() {
 
   const handleOpenModal = (ticket: ComplaintTicket) => {
     setSelectedTicket(ticket);
-    setStatus(ticket.status);
-    setResolutionNote(ticket.resolutionNote || '');
+    reset({
+      status: ticket.status,
+      resolutionNote: ticket.resolutionNote || ''
+    });
     setErrorMsg('');
   };
 
-  const handleSaveStatus = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onStatusSubmit = (data: ComplaintStatusFormData) => {
     const ticket = selectedTicket;
     if (!ticket) return;
 
     saveAction.run(async () => {
       setErrorMsg('');
-      const result = await dispatch(updateComplaintStatus({ ticketId: ticket.id, status, resolutionNote }));
+      const result = await dispatch(updateComplaintStatus({
+        ticketId: ticket.id,
+        status: data.status,
+        resolutionNote: data.resolutionNote.trim()
+      }));
       if (!updateComplaintStatus.fulfilled.match(result)) {
         const message = result.payload || 'Failed to update complaint status.';
         setErrorMsg(message);
         throw new Error(message);
       }
-      setSuccessMsg(`Status for ticket "${ticket.ticketNo}" updated to ${status}!`);
+      setSuccessMsg(`Status for ticket "${ticket.ticketNo}" updated to ${data.status}!`);
       setSelectedTicket(null);
       setTimeout(() => setSuccessMsg(''), 3000);
     });
@@ -374,22 +396,29 @@ export default function AdminComplaints() {
                 </div>
               )}
 
-              <form onSubmit={handleSaveStatus} className="space-y-4">
+              <form onSubmit={handleSubmit(onStatusSubmit)} className="space-y-4" noValidate>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Select New Ticket Status *
                   </label>
                   <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as any)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    {...register('status', { required: 'Status select karein.' })}
+                    className={`w-full bg-slate-50 border rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                      errors.status ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-blue-600'
+                    }`}
                   >
                     <option value="OPEN">OPEN (Unresolved)</option>
                     <option value="IN_REVIEW">IN REVIEW (Under Investigation)</option>
                     <option value="RESOLVED">RESOLVED (Solution Provided)</option>
                     <option value="CLOSED">CLOSED (Archived)</option>
                   </select>
+                  {errors.status && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{errors.status.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -399,18 +428,27 @@ export default function AdminComplaints() {
                   <textarea
                     rows={4}
                     placeholder="Enter resolution notes, action taken, or explanation for the user..."
-                    value={resolutionNote}
-                    onChange={(e) => setResolutionNote(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                    required
+                    {...register('resolutionNote', {
+                      required: 'Resolution remarks enter karein.',
+                      minLength: { value: 5, message: 'Resolution remarks kam se kam 5 characters ka hona chahiye.' }
+                    })}
+                    className={`w-full bg-slate-50 border rounded-xl p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                      errors.resolutionNote ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-blue-600'
+                    }`}
                   />
+                  {errors.resolutionNote && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{errors.resolutionNote.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-2 flex justify-end gap-3">
                   <button
                     type="button"
                     onClick={() => setSelectedTicket(null)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
                   </button>

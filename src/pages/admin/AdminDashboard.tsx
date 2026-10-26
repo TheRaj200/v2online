@@ -132,9 +132,9 @@ export const AdminDashboard: React.FC = () => {
             <div>
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Total Users</span>
               <div className="text-2xl font-black text-slate-900 mt-1">{usersCount.total}</div>
-              <p className="text-[11px] text-blue-600 font-semibold mt-1">
+              {/* <p className="text-[11px] text-blue-600 font-semibold mt-1">
                 {usersCount.agents} Agents • {usersCount.operators} Operators
-              </p>
+              </p> */}
             </div>
             <div className="h-12 w-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold border border-blue-100 group-hover:scale-105 transition-transform">
               <Users className="h-6 w-6" />
@@ -149,9 +149,7 @@ export const AdminDashboard: React.FC = () => {
             <div>
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Task Verification</span>
               <div className="text-2xl font-black text-amber-600 mt-1">{pendingTasksCount}</div>
-              <p className="text-[11px] text-amber-700 font-semibold mt-1">
-                Awaiting Payout Approval
-              </p>
+             
             </div>
             <div className="h-12 w-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold border border-amber-100 group-hover:scale-105 transition-transform">
               <Clock className="h-6 w-6" />
@@ -166,9 +164,7 @@ export const AdminDashboard: React.FC = () => {
             <div>
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Pending Withdrawals</span>
               <div className="text-2xl font-black text-emerald-600 mt-1">{pendingWithdrawalsCount}</div>
-              <p className="text-[11px] text-emerald-700 font-semibold mt-1">
-                Operator / Partner Desk
-              </p>
+            
             </div>
             <div className="h-12 w-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold border border-emerald-100 group-hover:scale-105 transition-transform">
               <CreditCard className="h-6 w-6" />
@@ -183,9 +179,7 @@ export const AdminDashboard: React.FC = () => {
             <div>
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Catalog Services</span>
               <div className="text-2xl font-black text-indigo-600 mt-1">{servicesCount}</div>
-              <p className="text-[11px] text-indigo-600 font-semibold mt-1">
-                Active Dynamic Forms
-              </p>
+              
             </div>
             <div className="h-12 w-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold border border-indigo-100 group-hover:scale-105 transition-transform">
               <Layers className="h-6 w-6" />

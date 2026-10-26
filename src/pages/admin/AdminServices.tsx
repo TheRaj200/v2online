@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { apiClient, FILE_BASE_URL } from '../../api/client';
 import { useAppDispatch, useAppSelector, selectServices, selectServicesStatus, isInitialLoading } from '../../store/hooks';
@@ -14,6 +15,14 @@ import {
   type FormFieldType,
   DROPDOWN_PRESETS
 } from '../../services/serviceStore';
+
+interface OperatorAssignmentFormData {
+  serviceId: string;
+  subServiceId?: string;
+  operatorId: string;
+  areaLabel?: string;
+  wardNo?: string;
+}
 import {
   Layers,
   PlusCircle,
@@ -116,6 +125,43 @@ export default function AdminServices() {
   const [operatorDropdownOpen, setOperatorDropdownOpen] = useState(false);
   const [operatorSearchQuery, setOperatorSearchQuery] = useState('');
   const operatorDropdownRef = useRef<HTMLDivElement>(null);
+
+  const {
+    register: registerAssign,
+    handleSubmit: handleAssignSubmitForm,
+    setValue: setAssignValue,
+    reset: resetAssignForm,
+    formState: { errors: assignErrors }
+  } = useForm<OperatorAssignmentFormData>({
+    defaultValues: {
+      serviceId: '',
+      subServiceId: 'all',
+      operatorId: '',
+      areaLabel: '',
+      wardNo: ''
+    }
+  });
+
+  // Sync component state to react-hook-form state so validation never misses custom selections
+  useEffect(() => {
+    setAssignValue('serviceId', assignSelectedServiceId, { shouldValidate: Boolean(assignSelectedServiceId) });
+  }, [assignSelectedServiceId, setAssignValue]);
+
+  useEffect(() => {
+    setAssignValue('operatorId', assignSelectedOperatorId, { shouldValidate: Boolean(assignSelectedOperatorId) });
+  }, [assignSelectedOperatorId, setAssignValue]);
+
+  useEffect(() => {
+    setAssignValue('subServiceId', assignSelectedSubServiceId);
+  }, [assignSelectedSubServiceId, setAssignValue]);
+
+  useEffect(() => {
+    setAssignValue('areaLabel', assignAreaLabel, { shouldValidate: Boolean(assignAreaLabel) });
+  }, [assignAreaLabel, setAssignValue]);
+
+  useEffect(() => {
+    setAssignValue('wardNo', assignWardNo, { shouldValidate: Boolean(assignWardNo) });
+  }, [assignWardNo, setAssignValue]);
 
   // Click outside to close operator custom dropdown
   useEffect(() => {
@@ -239,34 +285,46 @@ export default function AdminServices() {
     return svc?.operatorAssignmentMode || 'single';
   };
 
-  const handleCreateAssignment = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onAssignInvalid = (errs: any) => {
+    console.warn('Operator Assignment form validation error:', errs);
+    const firstErr = Object.values(errs)[0] as any;
+    if (firstErr?.message) {
+      setAssignError(firstErr.message);
+    }
+  };
+
+  const onAssignSubmit = (data: OperatorAssignmentFormData) => {
     assignAction.run(async () => {
       setAssignError('');
       setAssignSuccess('');
 
-      if (!assignSelectedServiceId) {
+      const svcId = data.serviceId || assignSelectedServiceId;
+      const opId = data.operatorId || assignSelectedOperatorId;
+
+      if (!svcId) {
         setAssignError('Kripya ek Service select karein.');
         return false;
       }
 
-      if (!assignSelectedOperatorId) {
+      if (!opId) {
         setAssignError('Kripya ek Operator select karein.');
         return false;
       }
 
       const mode = getSelectedServiceMode();
-      if (mode === 'area_wise' && (!assignAreaLabel || !assignAreaLabel.trim())) {
+      const areaVal = data.areaLabel !== undefined ? data.areaLabel : assignAreaLabel;
+      if (mode === 'area_wise' && (!areaVal || !areaVal.trim())) {
         setAssignError('Office / Area Name enter karna mandatory hai (Area Wise mode ke liye).');
         return false;
       }
 
+      const wardVal = data.wardNo !== undefined ? data.wardNo : assignWardNo;
       if (mode === 'ward_wise') {
-        if (!assignWardNo || isNaN(Number(assignWardNo))) {
+        if (!wardVal || isNaN(Number(wardVal))) {
           setAssignError('Valid Gwalior Ward Number (1-100) enter karna mandatory hai (Ward Wise mode ke liye).');
           return false;
         }
-        const wardNum = parseInt(assignWardNo, 10);
+        const wardNum = parseInt(String(wardVal), 10);
         if (wardNum < 1 || wardNum > 100) {
           setAssignError('Ward Number 1 se 100 ke beech hona chahiye.');
           return false;
@@ -275,13 +333,14 @@ export default function AdminServices() {
 
       try {
         const payload: any = {
-          operator_id: assignSelectedOperatorId,
-          service_id: assignSelectedServiceId,
-          area_label: mode === 'area_wise' ? assignAreaLabel.trim() : null,
-          ward_no: mode === 'ward_wise' ? String(assignWardNo).trim() : null
+          operator_id: opId,
+          service_id: svcId,
+          area_label: mode === 'area_wise' ? areaVal.trim() : null,
+          ward_no: mode === 'ward_wise' ? String(wardVal).trim() : null
         };
-        if (assignSelectedSubServiceId && assignSelectedSubServiceId !== 'all') {
-          payload.sub_service_id = assignSelectedSubServiceId;
+        const subId = data.subServiceId || assignSelectedSubServiceId;
+        if (subId && subId !== 'all') {
+          payload.sub_service_id = subId;
         }
 
         const res = await apiClient.post('/operator-assignments', payload);
@@ -289,13 +348,19 @@ export default function AdminServices() {
           throw new Error(res.data.message || 'Failed to assign operator.');
         }
         setAssignSuccess(res.data.message || 'Operator successfully assigned to service!');
-        setAssignSelectedServiceId('');
-        setAssignSelectedSubServiceId('all');
+        // Service selection maintain rakhein taaki admin ko newly assigned operator table me turant dikhe
         setAssignSelectedOperatorId('');
         setAssignAreaLabel('');
         setAssignWardNo('');
+        resetAssignForm({
+          serviceId: svcId,
+          subServiceId: 'all',
+          operatorId: '',
+          areaLabel: '',
+          wardNo: ''
+        });
         await fetchAssignments();
-        setTimeout(() => setAssignSuccess(''), 4000);
+        setTimeout(() => setAssignSuccess(''), 5000);
       } catch (err) {
         setAssignError(errorText(err, 'Failed to assign operator.'));
         throw err;
@@ -366,7 +431,7 @@ export default function AdminServices() {
   };
 
   // Icon Upload Handler
-  const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleIconUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // same file dobara select ho sake
     if (!file) return;
@@ -1070,11 +1135,19 @@ export default function AdminServices() {
               onClick={() => {
                 setShowAssignModal(true);
                 setAssignSelectedServiceId('');
+                setAssignSelectedSubServiceId('all');
                 setAssignSelectedOperatorId('');
                 setAssignAreaLabel('');
                 setAssignWardNo('');
                 setAssignError('');
                 setAssignSuccess('');
+                resetAssignForm({
+                  serviceId: '',
+                  subServiceId: 'all',
+                  operatorId: '',
+                  areaLabel: '',
+                  wardNo: ''
+                });
               }}
               className="w-full md:w-auto bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-2.5 px-5 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
             >
@@ -2619,7 +2692,7 @@ export default function AdminServices() {
                 )}
 
                 {/* Assignment Form */}
-                <form onSubmit={handleCreateAssignment} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <form onSubmit={handleAssignSubmitForm(onAssignSubmit, onAssignInvalid)} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3" noValidate>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                     <Plus className="h-4 w-4 text-indigo-600" />
                     <span>New Assignment</span>
@@ -2631,15 +2704,22 @@ export default function AdminServices() {
                       Select Service <span className="text-rose-500">*</span>
                     </label>
                     <select
+                      {...registerAssign('serviceId', { required: 'Service select karna zaroori hai.' })}
                       value={assignSelectedServiceId}
                       onChange={e => {
-                        setAssignSelectedServiceId(e.target.value);
+                        const val = e.target.value;
+                        setAssignSelectedServiceId(val);
+                        setAssignValue('serviceId', val, { shouldValidate: true });
                         setAssignSelectedSubServiceId('all');
+                        setAssignValue('subServiceId', 'all');
                         setAssignAreaLabel('');
+                        setAssignValue('areaLabel', '');
                         setAssignWardNo('');
+                        setAssignValue('wardNo', '');
                       }}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                      required
+                      className={`w-full px-3 py-2 bg-white border rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                        assignErrors.serviceId ? 'border-rose-500 bg-rose-50/20' : 'border-slate-300'
+                      }`}
                     >
                       <option value="">-- Choose Service --</option>
                       {services.filter(s => s.isActive).map(s => (
@@ -2648,6 +2728,12 @@ export default function AdminServices() {
                         </option>
                       ))}
                     </select>
+                    {assignErrors.serviceId && (
+                      <p className="mt-1 text-[11px] text-rose-600 flex items-center gap-1 font-medium">
+                        <AlertCircle className="h-3 w-3 shrink-0" />
+                        <span>{assignErrors.serviceId.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Dynamic fields based on service routing mode */}
@@ -2674,8 +2760,12 @@ export default function AdminServices() {
                               Select Sub-Service (Optional)
                             </label>
                             <select
+                              {...registerAssign('subServiceId')}
                               value={assignSelectedSubServiceId}
-                              onChange={e => setAssignSelectedSubServiceId(e.target.value)}
+                              onChange={e => {
+                                setAssignSelectedSubServiceId(e.target.value);
+                                setAssignValue('subServiceId', e.target.value);
+                              }}
                               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                             >
                               <option value="all">-- All Sub-Services of {selectedService.name} (Default) --</option>
@@ -2700,11 +2790,29 @@ export default function AdminServices() {
                             <input
                               type="text"
                               placeholder="e.g. Morar Office, Lashkar Branch, Thatipur Center..."
+                              {...registerAssign('areaLabel', {
+                                validate: val => {
+                                  if (mode === 'area_wise' && (!val || !val.trim())) {
+                                    return 'Office / Area Name enter karna zaroori hai.';
+                                  }
+                                  return true;
+                                }
+                              })}
                               value={assignAreaLabel}
-                              onChange={e => setAssignAreaLabel(e.target.value)}
-                              required
-                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                              onChange={e => {
+                                setAssignAreaLabel(e.target.value);
+                                setAssignValue('areaLabel', e.target.value, { shouldValidate: true });
+                              }}
+                              className={`w-full px-3 py-2 bg-white border rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                                assignErrors.areaLabel ? 'border-rose-500 bg-rose-50/20' : 'border-slate-300'
+                              }`}
                             />
+                            {assignErrors.areaLabel && (
+                              <p className="mt-1 text-[11px] text-rose-600 flex items-center gap-1 font-medium">
+                                <AlertCircle className="h-3 w-3 shrink-0" />
+                                <span>{assignErrors.areaLabel.message}</span>
+                              </p>
+                            )}
                           </div>
                         )}
 
@@ -2720,18 +2828,45 @@ export default function AdminServices() {
                               max="100"
                               step="1"
                               placeholder="e.g. 14"
+                              {...registerAssign('wardNo', {
+                                validate: val => {
+                                  if (mode === 'ward_wise') {
+                                    if (!val || isNaN(Number(val))) return 'Valid Gwalior Ward Number enter karein.';
+                                    const n = Number(val);
+                                    if (n < 1 || n > 100) return 'Ward Number 1 se 100 ke beech hona chahiye.';
+                                  }
+                                  return true;
+                                }
+                              })}
                               value={assignWardNo}
                               onChange={e => {
                                 const val = e.target.value;
                                 if (val === '' || (Number(val) >= 1 && Number(val) <= 100 && Number.isInteger(Number(val)))) {
                                   setAssignWardNo(val);
+                                  setAssignValue('wardNo', val, { shouldValidate: true });
                                 }
                               }}
-                              required
-                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                              className={`w-full px-3 py-2 bg-white border rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                                assignErrors.wardNo ? 'border-rose-500 bg-rose-50/20' : 'border-slate-300'
+                              }`}
                             />
+                            {assignErrors.wardNo && (
+                              <p className="mt-1 text-[11px] text-rose-600 flex items-center gap-1 font-medium">
+                                <AlertCircle className="h-3 w-3 shrink-0" />
+                                <span>{assignErrors.wardNo.message}</span>
+                              </p>
+                            )}
                           </div>
                         )}
+
+                        {/* Hidden operatorId for hook form */}
+                        <input
+                          type="hidden"
+                          {...registerAssign('operatorId', {
+                            required: 'Operator select karna zaroori hai.'
+                          })}
+                          value={assignSelectedOperatorId}
+                        />
 
                         {/* 2. Operator Dropdown (Custom Searchable UI) */}
                         <div className="relative" ref={operatorDropdownRef}>
@@ -2866,7 +3001,9 @@ export default function AdminServices() {
                                           <div
                                             key={op.id}
                                             onClick={() => {
-                                              setAssignSelectedOperatorId(String(op.id));
+                                              const chosenOpId = String(op.id);
+                                              setAssignSelectedOperatorId(chosenOpId);
+                                              setAssignValue('operatorId', chosenOpId, { shouldValidate: true, shouldDirty: true });
                                               setOperatorDropdownOpen(false);
                                               setOperatorSearchQuery('');
                                             }}
@@ -2916,6 +3053,12 @@ export default function AdminServices() {
                             </div>
                           )}
                         </div>
+                        {assignErrors.operatorId && (
+                          <p className="mt-1 text-[11px] text-rose-600 flex items-center gap-1 font-medium">
+                            <AlertCircle className="h-3 w-3 shrink-0" />
+                            <span>{assignErrors.operatorId.message}</span>
+                          </p>
+                        )}
 
                         {/* Selected Operator Detailed Assignment Status */}
                         {assignSelectedOperatorId && (() => {

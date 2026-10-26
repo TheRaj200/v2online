@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { shopStore } from '../../services/shopStore';
 import { useAppDispatch, useAppSelector, selectShops, selectShopsStatus, isInitialLoading } from '../../store/hooks';
@@ -19,6 +20,11 @@ import {
   Search
 } from 'lucide-react';
 
+interface DeleteShopRequestInputs {
+  shopId: string;
+  reason: string;
+}
+
 export default function ShopDeleteRequest() {
   const dispatch = useAppDispatch();
   const allShops = useAppSelector(selectShops);
@@ -28,10 +34,26 @@ export default function ShopDeleteRequest() {
   const isShopsLoading = isInitialLoading(shopsStatus, allShops.length);
   const submitAction = useAsyncAction();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedShopId, setSelectedShopId] = useState('');
-  const [reason, setReason] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // React Hook Form for Delete Request
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors }
+  } = useForm<DeleteShopRequestInputs>({
+    mode: 'onTouched',
+    defaultValues: {
+      shopId: '',
+      reason: ''
+    }
+  });
+
+  const selectedShopId = watch('shopId');
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [shopSearch, setShopSearch] = useState('');
@@ -53,32 +75,23 @@ export default function ShopDeleteRequest() {
 
   const handleOpenDialog = (shopId?: string) => {
     setErrorMsg('');
-    setReason('');
-    setSelectedShopId(shopId || (activeShops.length > 0 ? activeShops[0].id : ''));
+    const defaultId = shopId || (activeShops.length > 0 ? activeShops[0].id : '');
+    reset({
+      shopId: defaultId,
+      reason: ''
+    });
     setDropdownOpen(false);
     setShopSearch('');
     setIsDialogOpen(true);
   };
 
-  const handleSubmitDeleteRequest = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onDeleteSubmit = (data: DeleteShopRequestInputs) => {
     setErrorMsg('');
 
-    if (!selectedShopId) {
-      setErrorMsg('Please select a shop to delete.');
-      return;
-    }
-
-    if (!reason.trim()) {
-      setErrorMsg('Please enter a mandatory reason for requesting deletion.');
-      return;
-    }
-
-    const shopId = selectedShopId;
-    const shop = activeShops.find(s => s.id === shopId);
+    const shop = activeShops.find(s => s.id === data.shopId);
     submitAction.run(async () => {
       try {
-        await shopStore.requestDeletion(shopId, reason);
+        await shopStore.requestDeletion(data.shopId, data.reason);
       } catch (err: any) {
         setErrorMsg(err.message || 'Failed to submit deletion request.');
         throw err;
@@ -86,7 +99,7 @@ export default function ShopDeleteRequest() {
 
       setSuccessMsg(`Deletion request for "${shop?.shopName || 'Shop'}" submitted successfully to Admin!`);
       setIsDialogOpen(false);
-      setReason('');
+      reset();
       setTimeout(() => setSuccessMsg(''), 4000);
     });
   };
@@ -213,7 +226,7 @@ export default function ShopDeleteRequest() {
                 </button>
               </div>
 
-              <form onSubmit={handleSubmitDeleteRequest} className="space-y-4">
+              <form onSubmit={handleSubmit(onDeleteSubmit)} className="space-y-4" noValidate>
                 
                 {errorMsg && (
                   <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
@@ -231,7 +244,7 @@ export default function ShopDeleteRequest() {
                   <button
                     type="button"
                     onClick={() => setDropdownOpen(!dropdownOpen)}
-                    className="w-full bg-slate-50 hover:bg-slate-100/80 border border-slate-300 hover:border-slate-400 rounded-xl px-3.5 py-2.5 text-left transition-all flex items-center justify-between gap-2 shadow-xs focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                    className={`w-full bg-slate-50 hover:bg-slate-100/80 border ${errors.shopId ? 'border-red-500' : 'border-slate-300'} hover:border-slate-400 rounded-xl px-3.5 py-2.5 text-left transition-all flex items-center justify-between gap-2 shadow-xs focus:outline-none focus:ring-2 focus:ring-red-500/20`}
                   >
                     {selectedShop ? (
                       <div className="flex items-center gap-3 overflow-hidden">
@@ -254,6 +267,18 @@ export default function ShopDeleteRequest() {
                     )}
                     <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform duration-200 shrink-0 ${dropdownOpen ? 'rotate-180' : ''}`} />
                   </button>
+
+                  <input
+                    type="hidden"
+                    {...register('shopId', { required: 'Please select a shop to delete' })}
+                  />
+
+                  {errors.shopId && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3 inline" />
+                      <span>{errors.shopId.message}</span>
+                    </p>
+                  )}
 
                   {/* Dropdown Menu */}
                   {dropdownOpen && (
@@ -288,7 +313,7 @@ export default function ShopDeleteRequest() {
                                 key={shop.id}
                                 type="button"
                                 onClick={() => {
-                                  setSelectedShopId(shop.id);
+                                  setValue('shopId', shop.id, { shouldValidate: true });
                                   setDropdownOpen(false);
                                 }}
                                 className={`w-full text-left p-2.5 rounded-lg transition-all flex items-center justify-between gap-2 ${
@@ -333,19 +358,29 @@ export default function ShopDeleteRequest() {
                   </label>
                   <textarea
                     rows={3}
-                    placeholder="Provide detailed explanation for requesting shop removal..."
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600"
-                    required
+                    placeholder="Provide detailed explanation for requesting shop removal (minimum 10 characters)..."
+                    {...register('reason', {
+                      required: 'Reason enter karna zaroori hai',
+                      minLength: {
+                        value: 10,
+                        message: 'Reason kam se kam 10 characters ka hona chahiye'
+                      }
+                    })}
+                    className={`w-full bg-slate-50 border ${errors.reason ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-red-600'} rounded-xl p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                   />
+                  {errors.reason && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3 inline" />
+                      <span>{errors.reason.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-2 flex justify-end gap-3">
                   <button
                     type="button"
                     onClick={() => setIsDialogOpen(false)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
                   </button>

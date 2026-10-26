@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
 import { useAuth } from '../../context/AuthContext';
 import apiClient from '../../api/client';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
@@ -20,26 +21,85 @@ import {
   RefreshCw
 } from 'lucide-react';
 
+interface LoginFormInputs {
+  mobile: string;
+  password: string;
+}
+
+interface ForgotEmailInputs {
+  email: string;
+}
+
+interface ForgotOtpInputs {
+  otp: string;
+}
+
+interface ResetPasswordInputs {
+  newPassword: string;
+  confirmPassword: string;
+}
+
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
 
   // Login Form State
-  const [mobile, setMobile] = useState('');
-  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const loginAction = useAsyncAction();
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  // React Hook Form for Login
+  const {
+    register: registerLogin,
+    handleSubmit: handleLoginSubmit,
+    formState: { errors: loginErrors }
+  } = useForm<LoginFormInputs>({
+    mode: 'onTouched',
+    defaultValues: { mobile: '', password: '' }
+  });
 
   // Forgot Password Modal State
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotStep, setForgotStep] = useState<'email' | 'otp' | 'reset'>('email');
   const [resetEmail, setResetEmail] = useState('');
   const [resetOtp, setResetOtp] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
+
+  // React Hook Form for Step 1: Email
+  const {
+    register: registerEmail,
+    handleSubmit: handleEmailSubmit,
+    reset: resetEmailForm,
+    formState: { errors: emailErrors }
+  } = useForm<ForgotEmailInputs>({
+    mode: 'onTouched',
+    defaultValues: { email: '' }
+  });
+
+  // React Hook Form for Step 2: OTP
+  const {
+    register: registerOtp,
+    handleSubmit: handleOtpSubmit,
+    reset: resetOtpForm,
+    formState: { errors: otpErrors }
+  } = useForm<ForgotOtpInputs>({
+    mode: 'onTouched',
+    defaultValues: { otp: '' }
+  });
+
+  // React Hook Form for Step 3: Reset Password
+  const {
+    register: registerReset,
+    handleSubmit: handleResetSubmit,
+    watch: watchReset,
+    reset: resetResetForm,
+    formState: { errors: resetErrors }
+  } = useForm<ResetPasswordInputs>({
+    mode: 'onTouched',
+    defaultValues: { newPassword: '', confirmPassword: '' }
+  });
+
   // Har forgot-password step ka apna 3-stage button state
   const sendOtpAction = useAsyncAction();
   const resendOtpAction = useAsyncAction();
@@ -71,24 +131,13 @@ export const LoginPage: React.FC = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onLoginSubmit = (data: LoginFormInputs) => {
     setErrorMessage('');
     setSuccessMessage('');
 
-    if (!mobile || !password) {
-      setErrorMessage('Kripya Mobile Number aur Password dono enter karein.');
-      return;
-    }
-
-    if (mobile.length !== 10) {
-      setErrorMessage('Mobile number 10 digits ka hona chahiye.');
-      return;
-    }
-
     loginAction.run(async () => {
       try {
-        const result = await login(mobile, password);
+        const result = await login(data.mobile, data.password);
         if (result.success && result.redirectUrl) {
           navigate(result.redirectUrl, { replace: true });
           return true;
@@ -102,18 +151,13 @@ export const LoginPage: React.FC = () => {
     });
   };
 
-  // Step 1: Send Forgot Password OTP to Email (Send + Resend dono yahi use karte hain)
-  const sendForgotOtp = async (): Promise<boolean> => {
+  // Step 1: Send Forgot Password OTP to Email
+  const sendForgotOtpToEmail = async (emailToUse: string): Promise<boolean> => {
     setForgotError('');
     setForgotSuccess('');
 
-    if (!resetEmail.trim()) {
-      setForgotError('Kripya apna registered Email address enter karein.');
-      return false;
-    }
-
     try {
-      const res = await apiClient.post('/auth/forgot-password-otp', { email: resetEmail });
+      const res = await apiClient.post('/auth/forgot-password-otp', { email: emailToUse });
       if (res.data.status === 'success') {
         setForgotSuccess(res.data.message);
         setForgotStep('otp');
@@ -129,31 +173,28 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleSendForgotOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    sendOtpAction.run(sendForgotOtp);
+  const onEmailSubmit = (data: ForgotEmailInputs) => {
+    setResetEmail(data.email);
+    sendOtpAction.run(() => sendForgotOtpToEmail(data.email));
   };
 
   const handleResendForgotOtp = () => {
-    resendOtpAction.run(sendForgotOtp);
+    if (resetEmail) {
+      resendOtpAction.run(() => sendForgotOtpToEmail(resetEmail));
+    }
   };
 
   // Step 2: Verify Forgot Password OTP
-  const handleVerifyForgotOtp = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onOtpSubmit = (data: ForgotOtpInputs) => {
     setForgotError('');
     setForgotSuccess('');
-
-    if (!resetOtp.trim() || resetOtp.length !== 6) {
-      setForgotError('Kripya 6-digit OTP code enter karein.');
-      return;
-    }
+    setResetOtp(data.otp);
 
     verifyOtpAction.run(async () => {
       try {
         const res = await apiClient.post('/auth/verify-reset-otp', {
           email: resetEmail,
-          otp: resetOtp
+          otp: data.otp
         });
         if (res.data.status === 'success') {
           setForgotSuccess(res.data.message);
@@ -170,27 +211,16 @@ export const LoginPage: React.FC = () => {
   };
 
   // Step 3: Reset Password with OTP
-  const handleResetPassword = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onResetSubmit = (data: ResetPasswordInputs) => {
     setForgotError('');
     setForgotSuccess('');
-
-    if (!newPassword || newPassword.length < 6) {
-      setForgotError('Naya Password kam se kam 6 characters ka hona chahiye.');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setForgotError('New Password aur Confirm Password match nahi kar rahe hain.');
-      return;
-    }
 
     resetPassAction.run(async () => {
       try {
         const res = await apiClient.post('/auth/reset-password', {
           email: resetEmail,
           otp: resetOtp,
-          newPassword
+          newPassword: data.newPassword
         });
 
         if (res.data.status === 'success') {
@@ -199,12 +229,7 @@ export const LoginPage: React.FC = () => {
           setSuccessMessage('🎉 Password safaltapoorvak reset ho gaya hai! Kripya apne naye password se login karein.');
 
           // Reset Modal State
-          setForgotStep('email');
-          setResetEmail('');
-          setResetOtp('');
-          setNewPassword('');
-          setConfirmPassword('');
-          setIsTimerActive(false);
+          resetModalState();
           return true;
         }
         setForgotError(res.data.message || 'Password reset failed.');
@@ -223,9 +248,10 @@ export const LoginPage: React.FC = () => {
     setForgotSuccess('');
     setResetEmail('');
     setResetOtp('');
-    setNewPassword('');
-    setConfirmPassword('');
     setIsTimerActive(false);
+    resetEmailForm();
+    resetOtpForm();
+    resetResetForm();
   };
 
   return (
@@ -293,7 +319,7 @@ export const LoginPage: React.FC = () => {
               </div>
             )}
 
-            <form className="space-y-4" onSubmit={handleLogin}>
+            <form className="space-y-4" onSubmit={handleLoginSubmit(onLoginSubmit)} noValidate>
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Mobile Number
@@ -306,12 +332,22 @@ export const LoginPage: React.FC = () => {
                     type="tel"
                     maxLength={10}
                     placeholder="10-digit mobile number"
-                    value={mobile}
-                    onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
-                    className="block w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:bg-white transition-colors"
-                    required
+                    {...registerLogin('mobile', {
+                      required: 'Mobile number zaroori hai',
+                      pattern: {
+                        value: /^[6-9]\d{9}$/,
+                        message: 'Kripya valid 10-digit mobile number enter karein (starts with 6-9)'
+                      }
+                    })}
+                    className={`block w-full pl-10 pr-3 py-2.5 bg-slate-50 border ${loginErrors.mobile ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'} rounded-xl text-slate-900 placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white transition-colors`}
                   />
                 </div>
+                {loginErrors.mobile && (
+                  <p className="mt-1 text-xs text-red-600 font-medium flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 inline" />
+                    <span>{loginErrors.mobile.message}</span>
+                  </p>
+                )}
               </div>
 
               <div>
@@ -339,10 +375,14 @@ export const LoginPage: React.FC = () => {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="block w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:bg-white transition-colors"
-                    required
+                    {...registerLogin('password', {
+                      required: 'Password enter karna zaroori hai',
+                      minLength: {
+                        value: 6,
+                        message: 'Password kam se kam 6 characters ka hona chahiye'
+                      }
+                    })}
+                    className={`block w-full pl-10 pr-10 py-2.5 bg-slate-50 border ${loginErrors.password ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'} rounded-xl text-slate-900 placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white transition-colors`}
                   />
                   <button
                     type="button"
@@ -352,6 +392,12 @@ export const LoginPage: React.FC = () => {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                {loginErrors.password && (
+                  <p className="mt-1 text-xs text-red-600 font-medium flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 inline" />
+                    <span>{loginErrors.password.message}</span>
+                  </p>
+                )}
               </div>
 
               <div className="pt-2">
@@ -423,7 +469,7 @@ export const LoginPage: React.FC = () => {
 
             {/* STEP 1: Enter Email */}
             {forgotStep === 'email' && (
-              <form onSubmit={handleSendForgotOtp} className="space-y-4">
+              <form onSubmit={handleEmailSubmit(onEmailSubmit)} className="space-y-4" noValidate>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   Apna registered <strong>Email Address</strong> enter karein. Hum aapko 6-digit password reset OTP bhejenge (valid for 15 minutes).
                 </p>
@@ -439,12 +485,22 @@ export const LoginPage: React.FC = () => {
                     <input
                       type="email"
                       placeholder="name@example.com"
-                      value={resetEmail}
-                      onChange={(e) => setResetEmail(e.target.value)}
-                      className="block w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                      required
+                      {...registerEmail('email', {
+                        required: 'Email address enter karna zaroori hai',
+                        pattern: {
+                          value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                          message: 'Kripya valid email address enter karein'
+                        }
+                      })}
+                      className={`block w-full pl-10 pr-3 py-2.5 bg-slate-50 border ${emailErrors.email ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                     />
                   </div>
+                  {emailErrors.email && (
+                    <p className="mt-1 text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{emailErrors.email.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3 pt-2">
@@ -472,7 +528,7 @@ export const LoginPage: React.FC = () => {
 
             {/* STEP 2: Enter & Verify 6-Digit OTP */}
             {forgotStep === 'otp' && (
-              <form onSubmit={handleVerifyForgotOtp} className="space-y-4">
+              <form onSubmit={handleOtpSubmit(onOtpSubmit)} className="space-y-4" noValidate>
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between text-xs font-semibold text-blue-900">
                   <span className="flex items-center gap-1.5">
                     <Clock className="h-4 w-4 text-blue-600 animate-pulse" />
@@ -493,11 +549,21 @@ export const LoginPage: React.FC = () => {
                     type="text"
                     maxLength={6}
                     placeholder="e.g. 849201"
-                    value={resetOtp}
-                    onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, ''))}
-                    className="block w-full text-center tracking-[8px] font-mono font-bold text-lg py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                    required
+                    {...registerOtp('otp', {
+                      required: '6-digit OTP code enter karein',
+                      pattern: {
+                        value: /^\d{6}$/,
+                        message: 'OTP 6 digits ka hona chahiye'
+                      }
+                    })}
+                    className={`block w-full text-center tracking-[8px] font-mono font-bold text-lg py-2.5 bg-slate-50 border ${otpErrors.otp ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                   />
+                  {otpErrors.otp && (
+                    <p className="mt-1 text-xs text-red-600 font-medium flex items-center justify-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{otpErrors.otp.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between text-xs pt-1">
@@ -549,7 +615,7 @@ export const LoginPage: React.FC = () => {
 
             {/* STEP 3: Set New Password */}
             {forgotStep === 'reset' && (
-              <form onSubmit={handleResetPassword} className="space-y-4">
+              <form onSubmit={handleResetSubmit(onResetSubmit)} className="space-y-4" noValidate>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   OTP verification safal raha! Ab apne account ke liye naya password enter karein.
                 </p>
@@ -565,10 +631,14 @@ export const LoginPage: React.FC = () => {
                     <input
                       type={showNewPassword ? 'text' : 'password'}
                       placeholder="•••••••• (Min 6 chars)"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="block w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                      required
+                      {...registerReset('newPassword', {
+                        required: 'Naya password enter karna zaroori hai',
+                        minLength: {
+                          value: 6,
+                          message: 'Password kam se kam 6 characters ka hona chahiye'
+                        }
+                      })}
+                      className={`block w-full pl-10 pr-10 py-2.5 bg-slate-50 border ${resetErrors.newPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                     />
                     <button
                       type="button"
@@ -578,6 +648,12 @@ export const LoginPage: React.FC = () => {
                       {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
+                  {resetErrors.newPassword && (
+                    <p className="mt-1 text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{resetErrors.newPassword.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -591,12 +667,20 @@ export const LoginPage: React.FC = () => {
                     <input
                       type={showNewPassword ? 'text' : 'password'}
                       placeholder="••••••••"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="block w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                      required
+                      {...registerReset('confirmPassword', {
+                        required: 'Confirm password enter karna zaroori hai',
+                        validate: (value) =>
+                          value === watchReset('newPassword') || 'Confirm Password naye password se match nahi kar raha'
+                      })}
+                      className={`block w-full pl-10 pr-10 py-2.5 bg-slate-50 border ${resetErrors.confirmPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-slate-900 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:bg-white`}
                     />
                   </div>
+                  {resetErrors.confirmPassword && (
+                    <p className="mt-1 text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{resetErrors.confirmPassword.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3 pt-2">

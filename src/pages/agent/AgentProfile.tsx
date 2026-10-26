@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { useAuth } from '../../context/AuthContext';
 import apiClient from '../../api/client';
@@ -18,14 +19,32 @@ import {
   ShieldCheck
 } from 'lucide-react';
 
+interface AgentPasswordInputs {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
 export default function AgentProfile() {
   const { user, isLoading: authLoading } = useAuth();
   const profileLoading = authLoading || !user;
 
-  // Password Form State
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  // React Hook Form for Password
+  const {
+    register,
+    handleSubmit,
+    watch,
+    reset,
+    formState: { errors }
+  } = useForm<AgentPasswordInputs>({
+    mode: 'onTouched',
+    defaultValues: {
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    }
+  });
+
   const passAction = useAsyncAction();
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -57,38 +76,20 @@ export default function AgentProfile() {
     fetchSettings();
   }, []);
 
-  const handlePasswordUpdate = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onPasswordSubmit = (data: AgentPasswordInputs) => {
     setErrorMsg('');
     setSuccessMsg('');
-
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setErrorMsg('Please fill in all password fields.');
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setErrorMsg('New password must be at least 6 characters long.');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setErrorMsg('New Password and Confirm Password do not match.');
-      return;
-    }
 
     passAction.run(async () => {
       try {
         const response = await apiClient.post('/auth/change-password', {
-          currentPassword,
-          newPassword
+          currentPassword: data.currentPassword,
+          newPassword: data.newPassword
         });
 
         if (response.data.status === 'success') {
           setSuccessMsg('Security password updated successfully!');
-          setCurrentPassword('');
-          setNewPassword('');
-          setConfirmPassword('');
+          reset();
           setTimeout(() => setSuccessMsg(''), 4000);
           return true;
         }
@@ -225,7 +226,7 @@ export default function AgentProfile() {
               </div>
             )}
 
-            <form onSubmit={handlePasswordUpdate} className="space-y-4">
+            <form onSubmit={handleSubmit(onPasswordSubmit)} className="space-y-4" noValidate>
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Current Password *
@@ -233,11 +234,17 @@ export default function AgentProfile() {
                 <input
                   type="password"
                   placeholder="••••••••"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  required
+                  {...register('currentPassword', {
+                    required: 'Current password enter karna zaroori hai'
+                  })}
+                  className={`w-full bg-slate-50 border ${errors.currentPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                 />
+                {errors.currentPassword && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 inline" />
+                    <span>{errors.currentPassword.message}</span>
+                  </p>
+                )}
               </div>
 
               <div>
@@ -247,11 +254,21 @@ export default function AgentProfile() {
                 <input
                   type="password"
                   placeholder="At least 6 characters"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  required
+                  {...register('newPassword', {
+                    required: 'Naya password enter karna zaroori hai',
+                    minLength: {
+                      value: 6,
+                      message: 'Password kam se kam 6 characters ka hona chahiye'
+                    }
+                  })}
+                  className={`w-full bg-slate-50 border ${errors.newPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                 />
+                {errors.newPassword && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 inline" />
+                    <span>{errors.newPassword.message}</span>
+                  </p>
+                )}
               </div>
 
               <div>
@@ -261,11 +278,19 @@ export default function AgentProfile() {
                 <input
                   type="password"
                   placeholder="Re-enter new password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  required
+                  {...register('confirmPassword', {
+                    required: 'Confirm password enter karna zaroori hai',
+                    validate: (val) =>
+                      val === watch('newPassword') || 'Confirm Password naye password se match nahi kar raha'
+                  })}
+                  className={`w-full bg-slate-50 border ${errors.confirmPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                 />
+                {errors.confirmPassword && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 inline" />
+                    <span>{errors.confirmPassword.message}</span>
+                  </p>
+                )}
               </div>
 
               <div className="pt-2">
@@ -275,7 +300,7 @@ export default function AgentProfile() {
                   loadingText="Updating..."
                   successText="Password Updated!"
                   errorText="Update Failed"
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   <Key className="h-4 w-4" />
                   <span>Update Password</span>

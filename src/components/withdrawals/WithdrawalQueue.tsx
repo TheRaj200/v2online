@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useForm } from 'react-hook-form';
 import apiClient from '../../api/client';
 import { ActionButton } from '../ui/ActionButton';
 import { SkeletonTableRows } from '../ui/Skeleton';
@@ -17,8 +18,17 @@ import {
   ShieldCheck,
   Send,
   X,
-  AlertTriangle
+  AlertTriangle,
+  AlertCircle
 } from 'lucide-react';
+
+interface RejectWithdrawalFormData {
+  reason: string;
+}
+
+interface ReleasePayoutFormData {
+  utrNo: string;
+}
 
 type WithdrawalStatus = 'PENDING' | 'MANAGER_VERIFIED' | 'PROCESSED' | 'REJECTED' | 'APPROVED';
 
@@ -63,14 +73,30 @@ export default function WithdrawalQueue({ mode }: { mode: 'manager' | 'admin' })
 
   // Modals
   const [rejectTarget, setRejectTarget] = useState<WithdrawalItem | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
   const [releaseTarget, setReleaseTarget] = useState<WithdrawalItem | null>(null);
-  const [utrNo, setUtrNo] = useState('');
   const [modalError, setModalError] = useState('');
 
   const rowAction = useKeyedAsyncAction();
   const rejectAction = useAsyncAction();
   const releaseAction = useAsyncAction();
+
+  const {
+    register: registerReject,
+    handleSubmit: handleRejectSubmitForm,
+    reset: resetRejectForm,
+    formState: { errors: rejectErrors }
+  } = useForm<RejectWithdrawalFormData>({
+    defaultValues: { reason: '' }
+  });
+
+  const {
+    register: registerRelease,
+    handleSubmit: handleReleaseSubmitForm,
+    reset: resetReleaseForm,
+    formState: { errors: releaseErrors }
+  } = useForm<ReleasePayoutFormData>({
+    defaultValues: { utrNo: '' }
+  });
 
   const fetchWithdrawals = useCallback(async (background = false) => {
     if (background) setIsRefreshing(true);
@@ -112,27 +138,22 @@ export default function WithdrawalQueue({ mode }: { mode: 'manager' | 'admin' })
 
   const openReject = (req: WithdrawalItem) => {
     setRejectTarget(req);
-    setRejectReason('');
+    resetRejectForm();
     setModalError('');
   };
 
-  const handleConfirmReject = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onConfirmReject = (data: RejectWithdrawalFormData) => {
     if (!rejectTarget) return;
-    if (!rejectReason.trim()) {
-      setModalError('Rejection reason zaroori hai.');
-      return;
-    }
     const target = rejectTarget;
-    // Manager pending request ko /verify se reject karta hai; Admin /process se (pending ya verified dono)
     const endpoint = isAdmin ? 'process' : 'verify';
     rejectAction.run(async () => {
       try {
         await apiClient.patch(`/wallet/withdrawals/${target.id}/${endpoint}`, {
           action: 'reject',
-          rejectionReason: rejectReason.trim()
+          rejectionReason: data.reason.trim()
         });
         setRejectTarget(null);
+        resetRejectForm();
         flashSuccess(`Request "${target.reqNo}" rejected and ₹${Number(target.amount).toLocaleString()} refunded to user's wallet.`);
         await fetchWithdrawals(true);
       } catch (err) {
@@ -144,27 +165,23 @@ export default function WithdrawalQueue({ mode }: { mode: 'manager' | 'admin' })
 
   const openRelease = (req: WithdrawalItem) => {
     setReleaseTarget(req);
-    setUtrNo('');
+    resetReleaseForm();
     setModalError('');
   };
 
   // Step 2: Admin final payout release (real Bank UTR mandatory)
-  const handleConfirmRelease = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onConfirmRelease = (data: ReleasePayoutFormData) => {
     if (!releaseTarget) return;
-    if (utrNo.trim().length < 6) {
-      setModalError('Valid Bank UTR / Reference number enter karein (min 6 characters).');
-      return;
-    }
     const target = releaseTarget;
     releaseAction.run(async () => {
       try {
         await apiClient.patch(`/wallet/withdrawals/${target.id}/process`, {
           action: 'approve',
-          utrNo: utrNo.trim()
+          utrNo: data.utrNo.trim()
         });
         setReleaseTarget(null);
-        flashSuccess(`Payout of ₹${Number(target.amount).toLocaleString()} for "${target.userName}" released (UTR: ${utrNo.trim()}).`);
+        resetReleaseForm();
+        flashSuccess(`Payout of ₹${Number(target.amount).toLocaleString()} for "${target.userName}" released (UTR: ${data.utrNo.trim()}).`);
         await fetchWithdrawals(true);
       } catch (err) {
         setModalError(getApiErrorMessage(err, 'Failed to release payout.'));
@@ -421,7 +438,7 @@ export default function WithdrawalQueue({ mode }: { mode: 'manager' | 'admin' })
       {/* Reject Modal */}
       {rejectTarget && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <form onSubmit={handleConfirmReject} className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+          <form onSubmit={handleRejectSubmitForm(onConfirmReject)} className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" noValidate>
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <XCircle className="h-4 w-4 text-red-600" />
@@ -440,13 +457,22 @@ export default function WithdrawalQueue({ mode }: { mode: 'manager' | 'admin' })
               )}
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Rejection Reason *</label>
               <textarea
-                value={rejectReason}
-                onChange={e => setRejectReason(e.target.value)}
                 rows={3}
                 placeholder="e.g. Bank account details mismatch"
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                required
+                {...registerReject('reason', {
+                  required: 'Rejection reason enter karein.',
+                  minLength: { value: 5, message: 'Reason kam se kam 5 characters ka hona chahiye.' }
+                })}
+                className={`w-full bg-slate-50 border rounded-xl p-3 text-xs sm:text-sm focus:outline-none focus:ring-2 ${
+                  rejectErrors.reason ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-red-500'
+                }`}
               />
+              {rejectErrors.reason && (
+                <p className="text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  <span>{rejectErrors.reason.message}</span>
+                </p>
+              )}
             </div>
             <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
               <button type="button" onClick={() => setRejectTarget(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-white cursor-pointer">
@@ -457,7 +483,7 @@ export default function WithdrawalQueue({ mode }: { mode: 'manager' | 'admin' })
                 state={rejectAction.state}
                 loadingText="Rejecting..."
                 successText="Rejected"
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-md"
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
               >
                 <XCircle className="h-4 w-4" />
                 <span>Confirm Reject & Refund</span>
@@ -470,7 +496,7 @@ export default function WithdrawalQueue({ mode }: { mode: 'manager' | 'admin' })
       {/* Release (UTR) Modal — Admin only */}
       {releaseTarget && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <form onSubmit={handleConfirmRelease} className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+          <form onSubmit={handleReleaseSubmitForm(onConfirmRelease)} className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" noValidate>
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-emerald-600" />
@@ -494,13 +520,21 @@ export default function WithdrawalQueue({ mode }: { mode: 'manager' | 'admin' })
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Bank UTR / Reference No. *</label>
               <input
                 type="text"
-                value={utrNo}
-                onChange={e => setUtrNo(e.target.value)}
                 placeholder="Bank transfer ke baad mila UTR number"
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                required
-                minLength={6}
+                {...registerRelease('utrNo', {
+                  required: 'Bank UTR / Reference number enter karein.',
+                  minLength: { value: 6, message: 'Valid Bank UTR / Reference number (min 6 characters) enter karein.' }
+                })}
+                className={`w-full bg-slate-50 border rounded-xl px-3 py-2.5 font-mono focus:outline-none focus:ring-2 ${
+                  releaseErrors.utrNo ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-emerald-600'
+                }`}
               />
+              {releaseErrors.utrNo && (
+                <p className="text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  <span>{releaseErrors.utrNo.message}</span>
+                </p>
+              )}
               <p className="text-[11px] text-slate-500">Pehle bank / UPI se payment transfer karein, phir yahan asli UTR daal kar release karein.</p>
             </div>
             <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
@@ -512,7 +546,7 @@ export default function WithdrawalQueue({ mode }: { mode: 'manager' | 'admin' })
                 state={releaseAction.state}
                 loadingText="Releasing..."
                 successText="Released!"
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md"
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
               >
                 <CheckCircle2 className="h-4 w-4" />
                 <span>Confirm Release</span>

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import apiClient from '../../api/client';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
@@ -16,23 +17,56 @@ import {
   Save
 } from 'lucide-react';
 
+interface AdminPasswordInputs {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+interface AdminContactInputs {
+  helplineNumber: string;
+  supportEmail: string;
+}
+
 export default function AdminSettings() {
-  // Password state
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const passAction = useAsyncAction();
   const [passSuccess, setPassSuccess] = useState('');
   const [passError, setPassError] = useState('');
 
-  // Support contact state
-  const [helplineNumber, setHelplineNumber] = useState('');
-  const [supportEmail, setSupportEmail] = useState('');
   const contactAction = useAsyncAction();
-  // Settings values aane tak form ki jagah skeleton
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [contactSuccess, setContactSuccess] = useState('');
   const [contactError, setContactError] = useState('');
+
+  // React Hook Form for Password
+  const {
+    register: registerPass,
+    handleSubmit: handlePassSubmit,
+    watch: watchPass,
+    reset: resetPassForm,
+    formState: { errors: passErrors }
+  } = useForm<AdminPasswordInputs>({
+    mode: 'onTouched',
+    defaultValues: {
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    }
+  });
+
+  // React Hook Form for Contact
+  const {
+    register: registerContact,
+    handleSubmit: handleContactSubmit,
+    reset: resetContactForm,
+    formState: { errors: contactErrors }
+  } = useForm<AdminContactInputs>({
+    mode: 'onTouched',
+    defaultValues: {
+      helplineNumber: '',
+      supportEmail: ''
+    }
+  });
 
   // Load system settings
   useEffect(() => {
@@ -40,8 +74,12 @@ export default function AdminSettings() {
       try {
         const response = await apiClient.get('/settings');
         if (response.data.status === 'success') {
-          setHelplineNumber(response.data.data.helplineNumber || '+91 0755 2700800');
-          setSupportEmail(response.data.data.supportEmail || 'distributor-help@mponline.gov.in');
+          const hn = response.data.data.helplineNumber || '+91 0755 2700800';
+          const se = response.data.data.supportEmail || 'distributor-help@mponline.gov.in';
+          resetContactForm({
+            helplineNumber: hn,
+            supportEmail: se
+          });
         }
       } catch (e) {
         console.error('Failed to fetch settings:', e);
@@ -50,34 +88,18 @@ export default function AdminSettings() {
       }
     };
     fetchSettings();
-  }, []);
+  }, [resetContactForm]);
 
   // Password update handler
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onPasswordSubmit = (data: AdminPasswordInputs) => {
     setPassError('');
     setPassSuccess('');
-
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setPassError('Kripya sabhi password fields ko fill karein.');
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setPassError('Naya password kam se kam 6 characters ka hona chahiye.');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setPassError('Naya Password aur Confirm Password match nahi kar rahe hain.');
-      return;
-    }
 
     passAction.run(async () => {
       try {
         const response = await apiClient.post('/auth/change-password', {
-          currentPassword,
-          newPassword
+          currentPassword: data.currentPassword,
+          newPassword: data.newPassword
         });
         if (response.data.status !== 'success') throw new Error(response.data.message || 'Password update nahi ho saka.');
       } catch (err) {
@@ -85,29 +107,21 @@ export default function AdminSettings() {
         throw err;
       }
       setPassSuccess('Admin Password successfully update ho gaya hai!');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
+      resetPassForm();
       setTimeout(() => setPassSuccess(''), 3000);
     });
   };
 
   // Support contact update handler
-  const handleContactSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onContactSubmit = (data: AdminContactInputs) => {
     setContactError('');
     setContactSuccess('');
-
-    if (!helplineNumber.trim() || !supportEmail.trim()) {
-      setContactError('Helpline Number aur Support Email dono bharna zaroori hai.');
-      return;
-    }
 
     contactAction.run(async () => {
       try {
         const response = await apiClient.put('/settings', {
-          helplineNumber: helplineNumber.trim(),
-          supportEmail: supportEmail.trim()
+          helplineNumber: data.helplineNumber.trim(),
+          supportEmail: data.supportEmail.trim()
         });
         if (response.data.status !== 'success') throw new Error(response.data.message || 'Settings update nahi ho payi.');
       } catch (err) {
@@ -157,7 +171,7 @@ export default function AdminSettings() {
               </div>
             )}
 
-            <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <form onSubmit={handlePassSubmit(onPasswordSubmit)} className="space-y-4" noValidate>
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Current Admin Password *
@@ -165,11 +179,17 @@ export default function AdminSettings() {
                 <input
                   type="password"
                   placeholder="••••••••"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white"
-                  required
+                  {...registerPass('currentPassword', {
+                    required: 'Current admin password enter karna zaroori hai'
+                  })}
+                  className={`w-full bg-slate-50 border ${passErrors.currentPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-indigo-600'} rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                 />
+                {passErrors.currentPassword && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 inline" />
+                    <span>{passErrors.currentPassword.message}</span>
+                  </p>
+                )}
               </div>
 
               <div>
@@ -179,11 +199,21 @@ export default function AdminSettings() {
                 <input
                   type="password"
                   placeholder="At least 6 characters"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white"
-                  required
+                  {...registerPass('newPassword', {
+                    required: 'Naya password enter karna zaroori hai',
+                    minLength: {
+                      value: 6,
+                      message: 'Password kam se kam 6 characters ka hona chahiye'
+                    }
+                  })}
+                  className={`w-full bg-slate-50 border ${passErrors.newPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-indigo-600'} rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                 />
+                {passErrors.newPassword && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 inline" />
+                    <span>{passErrors.newPassword.message}</span>
+                  </p>
+                )}
               </div>
 
               <div>
@@ -193,11 +223,19 @@ export default function AdminSettings() {
                 <input
                   type="password"
                   placeholder="Re-enter new password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white"
-                  required
+                  {...registerPass('confirmPassword', {
+                    required: 'Confirm password enter karna zaroori hai',
+                    validate: (val) =>
+                      val === watchPass('newPassword') || 'Confirm Password naye password se match nahi kar raha'
+                  })}
+                  className={`w-full bg-slate-50 border ${passErrors.confirmPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-indigo-600'} rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                 />
+                {passErrors.confirmPassword && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 inline" />
+                    <span>{passErrors.confirmPassword.message}</span>
+                  </p>
+                )}
               </div>
 
               <div className="pt-2">
@@ -207,7 +245,7 @@ export default function AdminSettings() {
                   loadingText="Updating Password..."
                   successText="Password Updated!"
                   errorText="Update Failed"
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   <Key className="h-4 w-4" />
                   <span>Update Admin Password</span>
@@ -252,7 +290,7 @@ export default function AdminSettings() {
                 <Skeleton className="h-10 w-full rounded-xl mt-2" />
               </div>
             ) : (
-            <form onSubmit={handleContactSubmit} className="space-y-4">
+            <form onSubmit={handleContactSubmit(onContactSubmit)} className="space-y-4" noValidate>
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Helpline Mobile / Phone Number *
@@ -262,12 +300,19 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     placeholder="+91 0755 2700800"
-                    value={helplineNumber}
-                    onChange={(e) => setHelplineNumber(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white"
-                    required
+                    {...registerContact('helplineNumber', {
+                      required: 'Helpline Number enter karna zaroori hai',
+                      minLength: { value: 6, message: 'Valid phone number enter karein' }
+                    })}
+                    className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${contactErrors.helplineNumber ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-emerald-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                   />
                 </div>
+                {contactErrors.helplineNumber && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 inline" />
+                    <span>{contactErrors.helplineNumber.message}</span>
+                  </p>
+                )}
               </div>
 
               <div>
@@ -279,12 +324,22 @@ export default function AdminSettings() {
                   <input
                     type="email"
                     placeholder="support@mponline.gov.in"
-                    value={supportEmail}
-                    onChange={(e) => setSupportEmail(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white"
-                    required
+                    {...registerContact('supportEmail', {
+                      required: 'Support Email enter karna zaroori hai',
+                      pattern: {
+                        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                        message: 'Valid email address enter karein'
+                      }
+                    })}
+                    className={`w-full pl-9 pr-3 py-2.5 bg-slate-50 border ${contactErrors.supportEmail ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-emerald-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                   />
                 </div>
+                {contactErrors.supportEmail && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3 inline" />
+                    <span>{contactErrors.supportEmail.message}</span>
+                  </p>
+                )}
               </div>
 
               <div className="pt-2">
@@ -294,7 +349,7 @@ export default function AdminSettings() {
                   loadingText="Saving..."
                   successText="Settings Saved!"
                   errorText="Save Failed"
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   <Save className="h-4 w-4" />
                   <span>Save System Support Settings</span>

@@ -6,6 +6,7 @@ import {
   rejectShop as rejectShopThunk,
   requestShopDeletion,
   approveShopDeletion,
+  deleteShopPermanentlyThunk,
   type Shop,
   type NewShopInput
 } from '../store/slices/shopsSlice';
@@ -59,6 +60,10 @@ class ShopStoreService {
 
   public async approveDeletion(shopId: string) {
     await unwrapOrThrow(store.dispatch(approveShopDeletion({ shopId })), 'Failed to approve deletion.');
+  }
+
+  public async deleteShopPermanently(shopId: string) {
+    await unwrapOrThrow(store.dispatch(deleteShopPermanentlyThunk({ shopId })), 'Failed to delete shop.');
   }
 }
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { useAuth } from '../../context/AuthContext';
 import { shopStore } from '../../services/shopStore';
@@ -25,6 +26,16 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+interface AddShopFormData {
+  ownerName: string;
+  shopName: string;
+  mobile: string;
+  email: string;
+  aadhaar: string;
+  address: string;
+  password: string;
+}
+
 export default function ShopList() {
   const { user } = useAuth();
   const dispatch = useAppDispatch();
@@ -39,46 +50,40 @@ export default function ShopList() {
 
   // Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    ownerName: '',
-    shopName: '',
-    mobile: '',
-    email: '',
-    aadhaar: '',
-    address: '',
-    password: ''
-  });
   const [formError, setFormError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // React Hook Form for Add Shop
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors }
+  } = useForm<AddShopFormData>({
+    mode: 'onTouched',
+    defaultValues: {
+      ownerName: '',
+      shopName: '',
+      mobile: '',
+      email: '',
+      aadhaar: '',
+      address: '',
+      password: ''
+    }
+  });
 
   useEffect(() => {
     dispatch(fetchShops());
   }, [dispatch]);
 
-  const handleAddShopSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onAddShopSubmit = (data: AddShopFormData) => {
     setFormError('');
     setSuccessMsg('');
-
-    if (!formData.ownerName || !formData.shopName || !formData.mobile || !formData.address || !formData.password) {
-      setFormError('Please fill in all required fields (Owner Name, Shop Name, Mobile, Address, Password).');
-      return;
-    }
-
-    if (formData.mobile.length !== 10) {
-      setFormError('Mobile number must be exactly 10 digits.');
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      setFormError('Password must be at least 6 characters long.');
-      return;
-    }
 
     addAction.run(async () => {
       let created: Shop;
       try {
-        created = await shopStore.addActiveShopByDistributor(formData);
+        created = await shopStore.addActiveShopByDistributor(data);
       } catch (err: any) {
         setFormError(err.message || 'Failed to create shop on server. Please check details and try again.');
         throw err;
@@ -87,15 +92,7 @@ export default function ShopList() {
       // Close dialog immediately without delay
       setIsAddModalOpen(false);
       setSuccessMsg(`Shop "${created.shopName}" added successfully! The owner can now log in at /login using Mobile: ${created.mobile}`);
-      setFormData({
-        ownerName: '',
-        shopName: '',
-        mobile: '',
-        email: '',
-        aadhaar: '',
-        address: '',
-        password: ''
-      });
+      reset();
       setTimeout(() => setSuccessMsg(''), 5000);
     });
   };
@@ -283,7 +280,7 @@ export default function ShopList() {
                 </button>
               </div>
 
-              <form onSubmit={handleAddShopSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit(onAddShopSubmit)} className="space-y-4" noValidate>
                 
                 {successMsg && (
                   <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2">
@@ -310,12 +307,19 @@ export default function ShopList() {
                       <input
                         type="text"
                         placeholder="Owner Name"
-                        value={formData.ownerName}
-                        onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                        required
+                        {...register('ownerName', {
+                          required: 'Owner full name enter karna zaroori hai',
+                          minLength: { value: 2, message: 'Kam se kam 2 characters required' }
+                        })}
+                        className={`w-full pl-9 pr-3 py-2 bg-slate-50 border ${errors.ownerName ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                       />
                     </div>
+                    {errors.ownerName && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3 inline" />
+                        <span>{errors.ownerName.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* WhatsApp Mobile */}
@@ -329,12 +333,22 @@ export default function ShopList() {
                         type="tel"
                         maxLength={10}
                         placeholder="10-digit mobile"
-                        value={formData.mobile}
-                        onChange={(e) => setFormData({ ...formData, mobile: e.target.value.replace(/\D/g, '') })}
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                        required
+                        {...register('mobile', {
+                          required: 'Mobile number enter karna zaroori hai',
+                          pattern: {
+                            value: /^[6-9]\d{9}$/,
+                            message: 'Valid 10-digit mobile number enter karein'
+                          }
+                        })}
+                        className={`w-full pl-9 pr-3 py-2 bg-slate-50 border ${errors.mobile ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                       />
                     </div>
+                    {errors.mobile && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3 inline" />
+                        <span>{errors.mobile.message}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -348,12 +362,19 @@ export default function ShopList() {
                     <input
                       type="text"
                       placeholder="e.g. Sharma MP Online & CSC Center"
-                      value={formData.shopName}
-                      onChange={(e) => setFormData({ ...formData, shopName: e.target.value })}
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      required
+                      {...register('shopName', {
+                        required: 'Shop / Kiosk center name enter karna zaroori hai',
+                        minLength: { value: 2, message: 'Kam se kam 2 characters required' }
+                      })}
+                      className={`w-full pl-9 pr-3 py-2 bg-slate-50 border ${errors.shopName ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                     />
                   </div>
+                  {errors.shopName && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{errors.shopName.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -367,11 +388,21 @@ export default function ShopList() {
                       <input
                         type="email"
                         placeholder="email@example.com"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        {...register('email', {
+                          pattern: {
+                            value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                            message: 'Valid email address enter karein'
+                          }
+                        })}
+                        className={`w-full pl-9 pr-3 py-2 bg-slate-50 border ${errors.email ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                       />
                     </div>
+                    {errors.email && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3 inline" />
+                        <span>{errors.email.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Aadhaar Number */}
@@ -385,11 +416,23 @@ export default function ShopList() {
                         type="text"
                         maxLength={12}
                         placeholder="12-digit Aadhaar"
-                        value={formData.aadhaar}
-                        onChange={(e) => setFormData({ ...formData, aadhaar: e.target.value.replace(/\D/g, '') })}
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        {...register('aadhaar', {
+                          validate: (val) => {
+                            if (val && !/^\d{12}$/.test(val)) {
+                              return 'Aadhaar 12-digits ka hona chahiye';
+                            }
+                            return true;
+                          }
+                        })}
+                        className={`w-full pl-9 pr-3 py-2 bg-slate-50 border ${errors.aadhaar ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                       />
                     </div>
+                    {errors.aadhaar && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3 inline" />
+                        <span>{errors.aadhaar.message}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -403,12 +446,19 @@ export default function ShopList() {
                     <input
                       type="text"
                       placeholder="Detailed shop address"
-                      value={formData.address}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      required
+                      {...register('address', {
+                        required: 'Full address enter karna zaroori hai',
+                        minLength: { value: 5, message: 'Address kam se kam 5 characters ka hona chahiye' }
+                      })}
+                      className={`w-full pl-9 pr-3 py-2 bg-slate-50 border ${errors.address ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                     />
                   </div>
+                  {errors.address && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{errors.address.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 {/* Password Field */}
@@ -421,19 +471,26 @@ export default function ShopList() {
                     <input
                       type="password"
                       placeholder="Min 6 characters"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      required
+                      {...register('password', {
+                        required: 'Password enter karna zaroori hai',
+                        minLength: { value: 6, message: 'Password kam se kam 6 characters ka hona chahiye' }
+                      })}
+                      className={`w-full pl-9 pr-3 py-2 bg-slate-50 border ${errors.password ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2`}
                     />
                   </div>
+                  {errors.password && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{errors.password.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-2 flex justify-end gap-3">
                   <button
                     type="button"
                     onClick={() => setIsAddModalOpen(false)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50"
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -443,7 +500,7 @@ export default function ShopList() {
                     loadingText="Saving..."
                     successText="Shop Added!"
                     errorText="Failed"
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-colors"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-colors cursor-pointer"
                   >
                     Save & Activate Shop
                   </ActionButton>

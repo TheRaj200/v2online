@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import { shopStore } from '../../services/shopStore';
 import type { Shop } from '../../services/shopStore';
@@ -26,6 +27,16 @@ import {
   Circle
 } from 'lucide-react';
 
+interface AddShopFormData {
+  ownerName: string;
+  shopName: string;
+  mobile: string;
+  email: string;
+  aadhaar: string;
+  address: string;
+  password: string;
+}
+
 export default function ShopVerify() {
   const dispatch = useAppDispatch();
   const allShops = useAppSelector(selectShops);
@@ -45,14 +56,24 @@ export default function ShopVerify() {
   // Add Shop Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [formError, setFormError] = useState('');
-  const [formData, setFormData] = useState({
-    ownerName: '',
-    shopName: '',
-    mobile: '',
-    email: '',
-    aadhaar: '',
-    address: '',
-    password: ''
+
+  // React Hook Form for Add Shop
+  const {
+    register: registerShop,
+    handleSubmit: handleShopSubmit,
+    reset: resetShopForm,
+    formState: { errors: shopErrors }
+  } = useForm<AddShopFormData>({
+    mode: 'onTouched',
+    defaultValues: {
+      ownerName: '',
+      shopName: '',
+      mobile: '',
+      email: '',
+      aadhaar: '',
+      address: '',
+      password: ''
+    }
   });
 
   useEffect(() => {
@@ -83,30 +104,14 @@ export default function ShopVerify() {
   }, [allShops, activeTab, searchTerm]);
 
   // Handle Add Shop submission by distributor
-  const handleAddShopSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onAddShopSubmit = (data: AddShopFormData) => {
     setFormError('');
     setActionErrorMsg('');
-
-    if (!formData.ownerName.trim() || !formData.shopName.trim() || !formData.mobile.trim() || !formData.address.trim() || !formData.password.trim()) {
-      setFormError('Please fill in all mandatory fields (Owner Name, Shop Name, Mobile, Address, Password).');
-      return;
-    }
-
-    if (formData.mobile.length !== 10) {
-      setFormError('Mobile number must be exactly 10 digits.');
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      setFormError('Password must be at least 6 characters long.');
-      return;
-    }
 
     addAction.run(async () => {
       let created: Shop;
       try {
-        created = await shopStore.addActiveShopByDistributor(formData);
+        created = await shopStore.addActiveShopByDistributor(data);
       } catch (err: any) {
         setFormError(err.message || 'Failed to submit shop registration. Please verify details and try again.');
         throw err;
@@ -115,15 +120,7 @@ export default function ShopVerify() {
       // Dialog close immediately without delay
       setIsAddModalOpen(false);
       setActionSuccessMsg(`Shop request for "${created.shopName}" submitted to Admin for approval! It is now pending in Admin queue.`);
-      setFormData({
-        ownerName: '',
-        shopName: '',
-        mobile: '',
-        email: '',
-        aadhaar: '',
-        address: '',
-        password: ''
-      });
+      resetShopForm();
       setTimeout(() => setActionSuccessMsg(''), 6000);
     });
   };
@@ -422,7 +419,7 @@ export default function ShopVerify() {
                 </div>
               )}
 
-              <form onSubmit={handleAddShopSubmit} className="space-y-4">
+              <form onSubmit={handleShopSubmit(onAddShopSubmit)} className="space-y-4" noValidate>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   
                   {/* Owner Name */}
@@ -434,13 +431,20 @@ export default function ShopVerify() {
                       <User className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type="text"
-                        required
                         placeholder="e.g. Ramesh Kumar"
-                        value={formData.ownerName}
-                        onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        {...registerShop('ownerName', {
+                          required: 'Owner full name enter karna zaroori hai',
+                          minLength: { value: 2, message: 'Kam se kam 2 characters required' }
+                        })}
+                        className={`w-full bg-slate-50 border ${shopErrors.ownerName ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2`}
                       />
                     </div>
+                    {shopErrors.ownerName && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 inline" />
+                        <span>{shopErrors.ownerName.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Shop Name */}
@@ -452,13 +456,20 @@ export default function ShopVerify() {
                       <Store className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type="text"
-                        required
                         placeholder="e.g. Ramesh MP Online Center"
-                        value={formData.shopName}
-                        onChange={(e) => setFormData({ ...formData, shopName: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        {...registerShop('shopName', {
+                          required: 'Shop / Kiosk name enter karna zaroori hai',
+                          minLength: { value: 2, message: 'Kam se kam 2 characters required' }
+                        })}
+                        className={`w-full bg-slate-50 border ${shopErrors.shopName ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2`}
                       />
                     </div>
+                    {shopErrors.shopName && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 inline" />
+                        <span>{shopErrors.shopName.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Mobile Number */}
@@ -471,14 +482,25 @@ export default function ShopVerify() {
                       <input
                         type="tel"
                         maxLength={10}
-                        required
                         placeholder="e.g. 9876543210"
-                        value={formData.mobile}
-                        onChange={(e) => setFormData({ ...formData, mobile: e.target.value.replace(/\D/g, '') })}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        {...registerShop('mobile', {
+                          required: '10-digit mobile number enter karein',
+                          pattern: {
+                            value: /^[6-9]\d{9}$/,
+                            message: 'Valid 10-digit mobile number enter karein'
+                          }
+                        })}
+                        className={`w-full bg-slate-50 border ${shopErrors.mobile ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono focus:outline-none focus:ring-2`}
                       />
                     </div>
-                    <span className="text-[10px] text-slate-400">Used as the shop owner's login mobile number.</span>
+                    {shopErrors.mobile ? (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 inline" />
+                        <span>{shopErrors.mobile.message}</span>
+                      </p>
+                    ) : (
+                      <span className="text-[10px] text-slate-400">Used as the shop owner's login mobile number.</span>
+                    )}
                   </div>
 
                   {/* Password */}
@@ -490,14 +512,23 @@ export default function ShopVerify() {
                       <Lock className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type="password"
-                        required
-                        minLength={6}
                         placeholder="Minimum 6 characters"
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        {...registerShop('password', {
+                          required: 'Password enter karna zaroori hai',
+                          minLength: {
+                            value: 6,
+                            message: 'Password kam se kam 6 characters ka hona chahiye'
+                          }
+                        })}
+                        className={`w-full bg-slate-50 border ${shopErrors.password ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2`}
                       />
                     </div>
+                    {shopErrors.password && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 inline" />
+                        <span>{shopErrors.password.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Email */}
@@ -510,11 +541,21 @@ export default function ShopVerify() {
                       <input
                         type="email"
                         placeholder="e.g. shop@example.com"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        {...registerShop('email', {
+                          pattern: {
+                            value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                            message: 'Valid email address enter karein'
+                          }
+                        })}
+                        className={`w-full bg-slate-50 border ${shopErrors.email ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2`}
                       />
                     </div>
+                    {shopErrors.email && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 inline" />
+                        <span>{shopErrors.email.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Aadhaar */}
@@ -528,11 +569,23 @@ export default function ShopVerify() {
                         type="text"
                         maxLength={12}
                         placeholder="12-digit Aadhaar"
-                        value={formData.aadhaar}
-                        onChange={(e) => setFormData({ ...formData, aadhaar: e.target.value.replace(/\D/g, '') })}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        {...registerShop('aadhaar', {
+                          validate: (val) => {
+                            if (val && !/^\d{12}$/.test(val)) {
+                              return 'Aadhaar 12-digits ka hona chahiye';
+                            }
+                            return true;
+                          }
+                        })}
+                        className={`w-full bg-slate-50 border ${shopErrors.aadhaar ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono focus:outline-none focus:ring-2`}
                       />
                     </div>
+                    {shopErrors.aadhaar && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 inline" />
+                        <span>{shopErrors.aadhaar.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Full Address */}
@@ -543,14 +596,21 @@ export default function ShopVerify() {
                     <div className="relative">
                       <MapPin className="h-4 w-4 absolute left-3 top-3 text-slate-400" />
                       <textarea
-                        required
                         rows={2}
                         placeholder="Enter full shop address, Tehsil, Ward, Pin Code..."
-                        value={formData.address}
-                        onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                        {...registerShop('address', {
+                          required: 'Full shop address enter karna zaroori hai',
+                          minLength: { value: 5, message: 'Address kam se kam 5 characters ka hona chahiye' }
+                        })}
+                        className={`w-full bg-slate-50 border ${shopErrors.address ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2`}
                       />
                     </div>
+                    {shopErrors.address && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 inline" />
+                        <span>{shopErrors.address.message}</span>
+                      </p>
+                    )}
                   </div>
 
                 </div>

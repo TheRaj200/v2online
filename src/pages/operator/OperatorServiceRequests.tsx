@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useForm } from 'react-hook-form';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import apiClient, { FILE_BASE_URL } from '../../api/client';
 import { ActionButton } from '../../components/ui/ActionButton';
@@ -18,8 +19,19 @@ import {
   Download,
   RefreshCw,
   IndianRupee,
-  Plus
+  Plus,
+  AlertCircle
 } from 'lucide-react';
+
+interface OperatorRejectFormData {
+  reason: string;
+}
+
+interface OperatorPriceRequestFormData {
+  assignmentId: string;
+  requestedPrice: number;
+  reason?: string;
+}
 
 interface ApplicationDoc {
   label: string;
@@ -99,9 +111,17 @@ export default function OperatorServiceRequests() {
 
   // Reject Modal State
   const [rejectModalTask, setRejectModalTask] = useState<ApplicationItem | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
   const [rejectErrorMsg, setRejectErrorMsg] = useState('');
   const rejectAction = useAsyncAction();
+
+  const {
+    register: registerReject,
+    handleSubmit: handleRejectSubmitForm,
+    reset: resetRejectForm,
+    formState: { errors: rejectErrors }
+  } = useForm<OperatorRejectFormData>({
+    defaultValues: { reason: '' }
+  });
 
   // Price Request Modal State
   const [showPriceModal, setShowPriceModal] = useState(false);
@@ -112,13 +132,25 @@ export default function OperatorServiceRequests() {
   const [priceAssignmentId, setPriceAssignmentId] = useState('');
   const [priceRoutingMode, setPriceRoutingMode] = useState('single');
   const [priceAreaOrWardLabel, setPriceAreaOrWardLabel] = useState('');
-  const [priceNewRequested, setPriceNewRequested] = useState('');
-  const [priceReason, setPriceReason] = useState('');
   const [priceModalError, setPriceModalError] = useState('');
   const [priceModalSuccess, setPriceModalSuccess] = useState('');
   const priceAction = useAsyncAction();
   // Selected assignment ref me bhi rakhte hain taaki fetch callback ko dependency na banana pade
   const priceAssignmentIdRef = useRef('');
+
+  const {
+    register: registerPrice,
+    handleSubmit: handlePriceSubmitForm,
+    setValue: setPriceFormValue,
+    reset: resetPriceForm,
+    formState: { errors: priceErrors }
+  } = useForm<OperatorPriceRequestFormData>({
+    defaultValues: {
+      assignmentId: '',
+      requestedPrice: undefined,
+      reason: ''
+    }
+  });
 
   const fetchQueue = useCallback(async () => {
     try {
@@ -152,10 +184,11 @@ export default function OperatorServiceRequests() {
     const id = String(a.id ?? '');
     priceAssignmentIdRef.current = id;
     setPriceAssignmentId(id);
+    setPriceFormValue('assignmentId', id, { shouldValidate: true });
     setPriceSubServiceId(a.subServiceId);
     setPriceRoutingMode(a.assignmentMode || 'single');
     setPriceAreaOrWardLabel(a.areaLabel || (a.wardNo ? `Ward #${a.wardNo}` : 'Default Service'));
-  }, []);
+  }, [setPriceFormValue]);
 
   // forceSelectFirst = modal open par hamesha pehla assignment select karo; warna sirf jab kuch selected na ho
   const fetchMyAssignments = useCallback(async (forceSelectFirst = false) => {
@@ -189,18 +222,16 @@ export default function OperatorServiceRequests() {
   const handleOpenPriceModal = () => {
     setPriceModalError('');
     setPriceModalSuccess('');
-    setPriceNewRequested('');
-    setPriceReason('');
+    resetPriceForm();
     setShowPriceModal(true);
     fetchMyAssignments(true);
   };
 
-  const handlePriceRequestSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onPriceRequestSubmit = (data: OperatorPriceRequestFormData) => {
     setPriceModalError('');
     setPriceModalSuccess('');
 
-    const val = parseFloat(priceNewRequested);
+    const val = Number(data.requestedPrice);
     if (!priceSubServiceId || isNaN(val) || val <= 0) {
       setPriceModalError('Kripya valid service aur new rate enter karein.');
       return;
@@ -210,11 +241,11 @@ export default function OperatorServiceRequests() {
       try {
         const res = await apiClient.post('/services/price-requests', {
           subServiceId: priceSubServiceId,
-          assignmentId: priceAssignmentId || undefined,
+          assignmentId: data.assignmentId || priceAssignmentId || undefined,
           routingMode: priceRoutingMode,
           areaOrWardLabel: priceAreaOrWardLabel || undefined,
           requestedPrice: val,
-          reason: priceReason
+          reason: data.reason?.trim() || ''
         });
 
         if (res.data.status !== 'success') {
@@ -222,8 +253,7 @@ export default function OperatorServiceRequests() {
           return false;
         }
         setPriceModalSuccess(res.data.message || 'Price change request submitted!');
-        setPriceNewRequested('');
-        setPriceReason('');
+        resetPriceForm();
         await fetchPriceRequests();
         setTimeout(() => setPriceModalSuccess(''), 4000);
       } catch (err: any) {
@@ -443,20 +473,19 @@ export default function OperatorServiceRequests() {
 
   const openRejectModal = (t: ApplicationItem) => {
     setRejectErrorMsg('');
+    resetRejectForm();
     setRejectModalTask(t);
   };
 
-  const handleRejectSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onRejectSubmit = (data: OperatorRejectFormData) => {
     if (!rejectModalTask) return;
     const task = rejectModalTask;
     setRejectErrorMsg('');
 
-    // 3-stage button + double-submit guard (useAsyncAction loading ke dauraan dobara call ignore karta hai)
     rejectAction.run(async () => {
       try {
         const res = await apiClient.patch(`/applications/${task.id}/reject`, {
-          reason: rejectReason || 'Application rejected by Operator'
+          reason: data.reason.trim()
         });
 
         if (res.data.status !== 'success') {
@@ -465,7 +494,7 @@ export default function OperatorServiceRequests() {
         }
         setSuccessMsg(`Task "${task.applicationNo}" REJECTED & fee refunded back to shop wallet.`);
         setRejectModalTask(null);
-        setRejectReason('');
+        resetRejectForm();
         await fetchQueue();
         setTimeout(() => setSuccessMsg(''), 5000);
       } catch (err: any) {
@@ -1075,7 +1104,7 @@ export default function OperatorServiceRequests() {
                 </div>
               )}
 
-              <form onSubmit={handleRejectSubmit} className="space-y-4">
+              <form onSubmit={handleRejectSubmitForm(onRejectSubmit)} className="space-y-4" noValidate>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     Rejection Reason *
@@ -1083,17 +1112,29 @@ export default function OperatorServiceRequests() {
                   <textarea
                     rows={3}
                     placeholder="Specify why this request cannot be fulfilled (e.g. invalid document)..."
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    required
+                    {...registerReject('reason', {
+                      required: 'Rejection reason enter karein.',
+                      minLength: { value: 5, message: 'Reason kam se kam 5 characters ka hona chahiye.' }
+                    })}
+                    className={`w-full bg-slate-50 border rounded-xl p-3 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+                      rejectErrors.reason ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-red-500'
+                    }`}
                   />
+                  {rejectErrors.reason && (
+                    <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{rejectErrors.reason.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-2 flex justify-end gap-3">
                   <button
                     type="button"
-                    onClick={() => setRejectModalTask(null)}
+                    onClick={() => {
+                      resetRejectForm();
+                      setRejectModalTask(null);
+                    }}
                     className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
@@ -1148,7 +1189,7 @@ export default function OperatorServiceRequests() {
                   </div>
                 )}
 
-                <form onSubmit={handlePriceRequestSubmit} className="space-y-4 bg-slate-50 p-4.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <form onSubmit={handlePriceSubmitForm(onPriceRequestSubmit)} className="space-y-4 bg-slate-50 p-4.5 rounded-2xl border border-slate-200 shadow-2xs" noValidate>
                   <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     <IndianRupee className="h-4 w-4 text-teal-600" />
                     <span>Submit New Rate Change Request</span>
@@ -1158,20 +1199,24 @@ export default function OperatorServiceRequests() {
                     <label className="block text-xs font-bold text-slate-700 mb-1.5">Select Assigned Service / Area Scope *</label>
                     <div className="relative">
                       <select
+                        {...registerPrice('assignmentId', {
+                          required: 'Assigned service / scope select karein.'
+                        })}
                         value={priceAssignmentId}
                         onChange={(e) => {
                           const selectedId = e.target.value;
-                          // Sirf local selection badalta hai — koi refetch nahi
                           const match = myAssignments.find(a => String(a.id) === selectedId);
                           if (match) {
                             selectAssignment(match);
                           } else {
                             priceAssignmentIdRef.current = selectedId;
                             setPriceAssignmentId(selectedId);
+                            setPriceFormValue('assignmentId', selectedId, { shouldValidate: true });
                           }
                         }}
-                        className="w-full bg-white border border-teal-500/80 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-teal-600 shadow-2xs cursor-pointer"
-                        required
+                        className={`w-full bg-white border rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 shadow-2xs cursor-pointer ${
+                          priceErrors.assignmentId ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-teal-500/80 focus:ring-teal-600'
+                        }`}
                       >
                         {myAssignments.length === 0 ? (
                           <option value="">No custom assignments found</option>
@@ -1198,6 +1243,12 @@ export default function OperatorServiceRequests() {
                           })
                         )}
                       </select>
+                      {priceErrors.assignmentId && (
+                        <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                          <AlertCircle className="h-3 w-3 shrink-0" />
+                          <span>{priceErrors.assignmentId.message}</span>
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -1207,11 +1258,21 @@ export default function OperatorServiceRequests() {
                       type="number"
                       step="0.50"
                       placeholder="e.g. 150.00"
-                      value={priceNewRequested}
-                      onChange={(e) => setPriceNewRequested(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-teal-600"
-                      required
+                      {...registerPrice('requestedPrice', {
+                        required: 'New requested rate enter karein.',
+                        min: { value: 1, message: 'Minimum requested price ₹1 hona chahiye.' },
+                        valueAsNumber: true
+                      })}
+                      className={`w-full bg-white border rounded-xl px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 focus:ring-2 ${
+                        priceErrors.requestedPrice ? 'border-red-500 focus:ring-red-500 bg-red-50/20' : 'border-slate-300 focus:ring-teal-600'
+                      }`}
                     />
+                    {priceErrors.requestedPrice && (
+                      <p className="mt-1 text-[11px] text-red-600 flex items-center gap-1 font-medium">
+                        <AlertCircle className="h-3 w-3 shrink-0" />
+                        <span>{priceErrors.requestedPrice.message}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -1219,8 +1280,7 @@ export default function OperatorServiceRequests() {
                     <textarea
                       rows={2}
                       placeholder="Explain why rate modification is required..."
-                      value={priceReason}
-                      onChange={(e) => setPriceReason(e.target.value)}
+                      {...registerPrice('reason')}
                       className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-teal-600"
                     />
                   </div>

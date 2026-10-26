@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import { 
   User, 
   Phone, 
@@ -22,6 +23,12 @@ const formatJoinDate = (value?: string | null) => {
   const d = new Date(String(value).replace(' ', 'T'));
   return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
+
+interface DistributorPasswordInputs {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
 
 export default function DistributorProfile() {
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -68,41 +75,35 @@ export default function DistributorProfile() {
   };
   const isStatusActive = profile.status === 'ACTIVE' || profile.status === 'APPROVED';
 
-  // Password change state
-  const [passwords, setPasswords] = useState({
-    current: '',
-    newPass: '',
-    confirm: ''
+  // React Hook Form for Password change
+  const {
+    register,
+    handleSubmit,
+    watch,
+    reset,
+    formState: { errors }
+  } = useForm<DistributorPasswordInputs>({
+    mode: 'onTouched',
+    defaultValues: {
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    }
   });
+
   const passAction = useAsyncAction();
   const [passSuccess, setPassSuccess] = useState(false);
   const [passError, setPassError] = useState('');
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onPasswordSubmit = (data: DistributorPasswordInputs) => {
     setPassError('');
     setPassSuccess(false);
-
-    if (!passwords.current || !passwords.newPass || !passwords.confirm) {
-      setPassError('Please fill in all password fields');
-      return;
-    }
-
-    if (passwords.newPass !== passwords.confirm) {
-      setPassError('New password and confirm password do not match');
-      return;
-    }
-
-    if (passwords.newPass.length < 6) {
-      setPassError('New password must be at least 6 characters long');
-      return;
-    }
 
     passAction.run(async () => {
       try {
         const response = await apiClient.post('/auth/change-password', {
-          currentPassword: passwords.current,
-          newPassword: passwords.newPass
+          currentPassword: data.currentPassword,
+          newPassword: data.newPassword
         });
 
         if (response.data.status !== 'success') {
@@ -110,7 +111,7 @@ export default function DistributorProfile() {
           return false;
         }
         setPassSuccess(true);
-        setPasswords({ current: '', newPass: '', confirm: '' });
+        reset();
         setTimeout(() => setPassSuccess(false), 4000);
       } catch (err: any) {
         setPassError(err.response?.data?.message || 'Password update failed. Kripya Current Password check karein.');
@@ -234,7 +235,7 @@ export default function DistributorProfile() {
                 <span>Security & Password</span>
               </div>
 
-              <form onSubmit={handlePasswordSubmit} className="p-5 space-y-4">
+              <form onSubmit={handleSubmit(onPasswordSubmit)} className="p-5 space-y-4" noValidate>
                 
                 {passSuccess && (
                   <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs flex items-center gap-2">
@@ -255,11 +256,17 @@ export default function DistributorProfile() {
                   <input
                     type="password"
                     placeholder="••••••••"
-                    value={passwords.current}
-                    onChange={(e) => setPasswords({...passwords, current: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                    required
+                    {...register('currentPassword', {
+                      required: 'Current password enter karna zaroori hai'
+                    })}
+                    className={`w-full bg-slate-50 border ${errors.currentPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                   />
+                  {errors.currentPassword && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{errors.currentPassword.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -267,11 +274,21 @@ export default function DistributorProfile() {
                   <input
                     type="password"
                     placeholder="At least 6 characters"
-                    value={passwords.newPass}
-                    onChange={(e) => setPasswords({...passwords, newPass: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                    required
+                    {...register('newPassword', {
+                      required: 'Naya password enter karna zaroori hai',
+                      minLength: {
+                        value: 6,
+                        message: 'Password kam se kam 6 characters ka hona chahiye'
+                      }
+                    })}
+                    className={`w-full bg-slate-50 border ${errors.newPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                   />
+                  {errors.newPassword && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{errors.newPassword.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -279,11 +296,19 @@ export default function DistributorProfile() {
                   <input
                     type="password"
                     placeholder="Re-enter new password"
-                    value={passwords.confirm}
-                    onChange={(e) => setPasswords({...passwords, confirm: e.target.value})}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white"
-                    required
+                    {...register('confirmPassword', {
+                      required: 'Confirm password enter karna zaroori hai',
+                      validate: (val) =>
+                        val === watch('newPassword') || 'Confirm Password naye password se match nahi kar raha'
+                    })}
+                    className={`w-full bg-slate-50 border ${errors.confirmPassword ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 focus:ring-blue-600'} rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:bg-white`}
                   />
+                  {errors.confirmPassword && (
+                    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3 inline" />
+                      <span>{errors.confirmPassword.message}</span>
+                    </p>
+                  )}
                 </div>
 
                 <ActionButton
@@ -292,7 +317,7 @@ export default function DistributorProfile() {
                   loadingText="Updating..."
                   successText="Password Updated!"
                   errorText="Update Failed"
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm shadow-md transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm shadow-md transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   <Key className="h-4 w-4" />
                   <span>Update Password</span>
